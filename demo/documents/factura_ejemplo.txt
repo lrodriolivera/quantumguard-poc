@@ -1,0 +1,50 @@
+FACTURA ELECTRONICA
+
+============================================
+         QUANTUMGUARD AI - FACTURA
+============================================
+
+Factura No.: FAC-2026-0001
+Fecha de Emision: 02/02/2026
+Fecha de Vencimiento: 02/03/2026
+
+EMISOR:
+  RYP Cloud S.A.
+  RUC: 80098765-4
+  Direccion: Av. Innovacion 456
+  Telefono: +595 21 123456
+  Email: facturacion@rypcloud.com
+
+RECEPTOR:
+  Empresa Demo S.A.
+  RUC: 80012345-6
+  Direccion: Av. Tecnologia 123
+  Contacto: Juan Perez
+
+--------------------------------------------
+DETALLE DE SERVICIOS
+--------------------------------------------
+
+Cant. | Descripcion                    | Precio
+------|--------------------------------|--------
+   1  | Licencia QuantumGuard Pro      | $400.00
+   1  | Soporte Premium (mensual)      | $100.00
+ 500  | Firmas adicionales             |  $50.00
+--------------------------------------------
+                          SUBTOTAL: | $550.00
+                          IVA (10%): |  $55.00
+--------------------------------------------
+                             TOTAL: | $605.00
+--------------------------------------------
+
+FORMA DE PAGO: Transferencia Bancaria
+CUENTA: Banco Nacional - 123456789
+
+NOTAS:
+- Esta factura incluye firma digital post-cuantica
+- Validez garantizada por 50+ anos
+- Verificable en: quantumguard.ai/verify
+
+============================================
+Gracias por confiar en QuantumGuard AI
+============================================

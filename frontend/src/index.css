@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+/* Custom theme colors for QuantumGuard */
+@theme {
+  --color-quantum-50: #f0f7ff;
+  --color-quantum-100: #e0effe;
+  --color-quantum-200: #b9e0fe;
+  --color-quantum-300: #7cc4fd;
+  --color-quantum-400: #36a9f9;
+  --color-quantum-500: #0c8eea;
+  --color-quantum-600: #0070c8;
+  --color-quantum-700: #0159a2;
+  --color-quantum-800: #064b86;
+  --color-quantum-900: #0b406f;
+  --color-quantum-950: #07294a;
+}
+
+/* Base styles */
+body {
+  @apply bg-gray-50 text-gray-900 antialiased;
+}
+
+#root {
+  @apply min-h-screen;
+}

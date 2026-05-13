@@ -1,0 +1,22 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "https://postcuantica.io",
+      "localStorage": [
+        {
+          "name": "accessToken",
+          "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJjOWQ4ZTJiYy0yOThjLTQ0Y2UtOTA4Ny1kM2RlZTIyYzM5MGMiLCJlbWFpbCI6ImUyZV8xNzcyODAxODI3NjUxQHRlc3QucXVhbnR1bWd1YXJkLmFpIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc3MjgwMTgyOCwiZXhwIjoxNzcyODA1NDI4fQ.TIUL3i6Gj6MiKg7oVEDqPay0wGXAER3RLx4OD4B7VR8"
+        },
+        {
+          "name": "user",
+          "value": "{\"id\":\"c9d8e2bc-298c-44ce-9087-d3dee22c390c\",\"email\":\"e2e_1772801827651@test.quantumguard.ai\",\"first_name\":null,\"last_name\":null,\"is_active\":true,\"created_at\":\"2026-03-06T12:57:08.780Z\",\"updated_at\":\"2026-03-06T12:57:08.780Z\"}"
+        },
+        {
+          "name": "refreshToken",
+          "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJjOWQ4ZTJiYy0yOThjLTQ0Y2UtOTA4Ny1kM2RlZTIyYzM5MGMiLCJlbWFpbCI6ImUyZV8xNzcyODAxODI3NjUxQHRlc3QucXVhbnR1bWd1YXJkLmFpIiwidHlwZSI6InJlZnJlc2giLCJpYXQiOjE3NzI4MDE4MjgsImV4cCI6MTc3MzQwNjYyOH0.ASsUvHyVxNDnv-WQjo_Zh0wLTpldRmGYPAc-jcUFHo8"
+        }
+      ]
+    }
+  ]
+}

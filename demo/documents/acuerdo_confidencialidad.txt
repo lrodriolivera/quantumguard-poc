@@ -1,0 +1,68 @@
+ACUERDO DE CONFIDENCIALIDAD (NDA)
+
+================================================
+  ACUERDO DE NO DIVULGACION DE INFORMACION
+================================================
+
+Fecha de Firma: 2 de Febrero de 2026
+ID del Acuerdo: NDA-QG-2026-001
+
+PARTE REVELADORA:
+  RYP Cloud S.A.
+  Representante Legal: Carlos Rodriguez
+  Cargo: Director Ejecutivo
+
+PARTE RECEPTORA:
+  [Nombre del Socio/Cliente]
+  Representante: [Nombre]
+  Cargo: [Cargo]
+
+1. DEFINICION DE INFORMACION CONFIDENCIAL
+
+Se considera "Informacion Confidencial" toda informacion
+tecnica, comercial, financiera o de cualquier otra naturaleza
+relacionada con:
+
+  a) Algoritmos criptograficos propietarios
+  b) Arquitectura de sistemas
+  c) Estrategias de negocio
+  d) Lista de clientes
+  e) Codigo fuente y documentacion tecnica
+
+2. OBLIGACIONES DE LA PARTE RECEPTORA
+
+La Parte Receptora se compromete a:
+
+  - No divulgar la Informacion Confidencial a terceros
+  - Usar la informacion solo para los fines acordados
+  - Proteger la informacion con medidas de seguridad adecuadas
+  - Devolver toda informacion al termino del acuerdo
+
+3. DURACION
+
+Este acuerdo tendra una vigencia de cinco (5) anos a partir
+de la fecha de firma.
+
+4. JURISDICCION
+
+Las partes acuerdan someterse a la jurisdiccion de los
+tribunales de la Ciudad de Asuncion, Paraguay.
+
+5. FIRMAS DIGITALES
+
+Este documento se firma utilizando tecnologia post-cuantica
+ML-DSA (CRYSTALS-Dilithium), garantizando su autenticidad
+e integridad incluso ante el advenimiento de computadoras
+cuanticas.
+
+================================================
+        FIRMA DIGITAL POST-CUANTICA
+  Algoritmo: ML-DSA-44 (NIST FIPS 204)
+  Validez: Quantum-Safe (50+ anos)
+================================================
+
+[Espacio para firma digital]
+
+---
+Documento protegido por QuantumGuard AI
+Verificar autenticidad en: quantumguard.ai/verify

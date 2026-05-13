@@ -1,0 +1,44 @@
+CONTRATO DE SERVICIOS TECNOLOGICOS
+
+Fecha: 2 de Febrero de 2026
+Numero de Contrato: QG-2026-001
+
+PARTES:
+
+CLIENTE: Empresa Demo S.A.
+         Direccion: Av. Tecnologia 123, Ciudad
+         RUC: 80012345-6
+
+PROVEEDOR: RYP Cloud S.A.
+           Direccion: Av. Innovacion 456, Ciudad
+           RUC: 80098765-4
+
+OBJETO DEL CONTRATO:
+
+El presente contrato tiene por objeto la prestacion de servicios de
+firma digital post-cuantica mediante la plataforma QuantumGuard AI.
+
+SERVICIOS INCLUIDOS:
+
+1. Acceso a plataforma de firmas digitales
+2. Algoritmos ML-DSA certificados por NIST
+3. Almacenamiento seguro de documentos
+4. API para integracion empresarial
+5. Soporte tecnico 24/7
+
+DURACION:
+
+El presente contrato tendra una duracion de doce (12) meses,
+renovable automaticamente por periodos iguales.
+
+VALOR:
+
+El valor mensual del servicio es de USD 500.00 (Quinientos dolares).
+
+FIRMAS:
+
+Este documento sera firmado digitalmente utilizando tecnologia
+post-cuantica ML-DSA para garantizar su validez a largo plazo.
+
+---
+Documento generado para demostracion de QuantumGuard AI

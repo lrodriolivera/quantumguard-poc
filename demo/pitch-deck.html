@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QuantumGuard AI - Pitch Deck</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --dark: #0f172a;
+    --dark2: #1e293b;
+    --blue: #3b82f6;
+    --blue-dark: #1d4ed8;
+    --purple: #7c3aed;
+    --green: #10b981;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --gray: #94a3b8;
+    --light: #f1f5f9;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--dark);
+    color: #fff;
+  }
+
+  .slide {
+    width: 1280px;
+    height: 720px;
+    margin: 0 auto 4px;
+    padding: 60px 80px;
+    position: relative;
+    overflow: hidden;
+    page-break-after: always;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Slide backgrounds */
+  .bg-dark { background: linear-gradient(135deg, #0f172a 0%, #1a1a3e 100%); }
+  .bg-blue { background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%); }
+  .bg-gradient { background: linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #1a1a3e 100%); }
+  .bg-light { background: #f8fafc; color: #1e293b; }
+
+  /* Watermark */
+  .slide::after {
+    content: 'postcuantica.io';
+    position: absolute;
+    bottom: 20px;
+    right: 40px;
+    font-size: 13px;
+    color: rgba(255,255,255,0.2);
+    font-weight: 500;
+  }
+  .bg-light::after { color: rgba(0,0,0,0.15); }
+
+  .slide-number {
+    position: absolute;
+    bottom: 20px;
+    left: 40px;
+    font-size: 13px;
+    color: rgba(255,255,255,0.2);
+    font-weight: 500;
+  }
+  .bg-light .slide-number { color: rgba(0,0,0,0.15); }
+
+  h1 { font-size: 48px; font-weight: 800; line-height: 1.1; margin-bottom: 16px; }
+  h2 { font-size: 36px; font-weight: 700; line-height: 1.2; margin-bottom: 12px; }
+  h3 { font-size: 24px; font-weight: 600; line-height: 1.3; margin-bottom: 8px; }
+
+  .subtitle { font-size: 22px; color: var(--gray); font-weight: 400; line-height: 1.5; }
+  .bg-light .subtitle { color: #64748b; }
+
+  .tag {
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .tag-blue { background: rgba(59,130,246,0.15); color: #60a5fa; }
+  .tag-green { background: rgba(16,185,129,0.15); color: #34d399; }
+  .tag-purple { background: rgba(124,58,237,0.15); color: #a78bfa; }
+  .tag-amber { background: rgba(245,158,11,0.15); color: #fbbf24; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; }
+  .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 20px; }
+
+  .card {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 28px;
+  }
+  .bg-light .card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+
+  .metric {
+    font-size: 44px;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 8px;
+  }
+  .metric-label {
+    font-size: 14px;
+    color: var(--gray);
+    font-weight: 500;
+  }
+
+  .text-blue { color: #60a5fa; }
+  .text-green { color: #34d399; }
+  .text-purple { color: #a78bfa; }
+  .text-amber { color: #fbbf24; }
+  .text-red { color: #f87171; }
+  .text-white { color: #fff; }
+
+  .flex { display: flex; }
+  .flex-col { flex-direction: column; }
+  .flex-1 { flex: 1; }
+  .items-center { align-items: center; }
+  .justify-center { justify-content: center; }
+  .justify-between { justify-content: space-between; }
+  .gap-4 { gap: 16px; }
+  .gap-6 { gap: 24px; }
+  .gap-8 { gap: 32px; }
+  .mt-auto { margin-top: auto; }
+  .mb-2 { margin-bottom: 8px; }
+  .mb-4 { margin-bottom: 16px; }
+  .mb-6 { margin-bottom: 24px; }
+  .mb-8 { margin-bottom: 32px; }
+
+  .bar {
+    height: 8px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.1);
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 4px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15px;
+  }
+  table th {
+    text-align: left;
+    padding: 12px 16px;
+    font-weight: 600;
+    border-bottom: 2px solid rgba(255,255,255,0.1);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--gray);
+  }
+  table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .bg-light table th { border-bottom-color: #e2e8f0; }
+  .bg-light table td { border-bottom-color: #f1f5f9; }
+
+  .timeline-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .timeline-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-top: 6px;
+    flex-shrink: 0;
+  }
+  .timeline-done { background: var(--green); }
+  .timeline-active { background: var(--blue); box-shadow: 0 0 0 4px rgba(59,130,246,0.3); }
+  .timeline-pending { background: rgba(255,255,255,0.15); }
+
+  ul { list-style: none; padding: 0; }
+  ul li {
+    padding: 8px 0;
+    padding-left: 24px;
+    position: relative;
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  ul li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 16px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--blue);
+  }
+
+  @media print {
+    body { background: white; }
+    .slide { margin: 0; box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!-- SLIDE 1: Title -->
+<!-- ============================================================ -->
+<div class="slide bg-dark flex-col justify-center items-center" style="text-align:center;">
+  <span class="slide-number"></span>
+  <div style="margin-bottom:32px;">
+    <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+  </div>
+  <h1 style="font-size:56px;">QuantumGuard AI</h1>
+  <p class="subtitle" style="font-size:26px;margin-bottom:40px;">Firmas Digitales Post-Cuanticas</p>
+  <div class="flex gap-4" style="justify-content:center;">
+    <span class="tag tag-blue">NIST FIPS 204</span>
+    <span class="tag tag-purple">ML-DSA</span>
+    <span class="tag tag-green">Quantum-Safe</span>
+    <span class="tag tag-amber">SLH-DSA</span>
+  </div>
+  <p style="margin-top:48px;font-size:15px;color:rgba(255,255,255,0.3);">postcuantica.io &mdash; Confidencial</p>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 2: El Problema -->
+<!-- ============================================================ -->
+<div class="slide bg-gradient">
+  <span class="slide-number">01</span>
+  <span class="tag tag-amber mb-6">EL PROBLEMA</span>
+  <h1>La criptografia actual<br>tiene fecha de expiracion</h1>
+  <p class="subtitle mb-8" style="max-width:700px;">Las computadoras cuanticas romperan RSA y ECDSA en 10-15 anos. Los documentos firmados hoy seran falsificables manana.</p>
+
+  <div class="grid-3 mt-auto">
+    <div class="card" style="text-align:center;">
+      <div class="metric text-red">2030</div>
+      <div class="metric-label">Estimacion Q-Day (amenaza cuantica viable)</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="metric text-amber">$3.5T</div>
+      <div class="metric-label">Activos digitales protegidos por RSA/ECDSA en LATAM</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="metric text-red">0%</div>
+      <div class="metric-label">De empresas LATAM con plan de migracion PQC</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 3: La Amenaza "Forge Later" -->
+<!-- ============================================================ -->
+<div class="slide bg-blue">
+  <span class="slide-number">02</span>
+  <span class="tag tag-amber mb-6">RIESGO REAL</span>
+  <h2>Ataque "Forge Later" (Falsificar Despues)</h2>
+  <p class="subtitle mb-8">Un atacante con computadora cuantica podra falsificar identidades, alterar contratos y emitir software malicioso a nombre de entidades legitimas.</p>
+
+  <div class="grid-2 flex-1">
+    <div>
+      <h3 class="text-amber mb-4">Industrias vulnerables</h3>
+      <ul>
+        <li><strong>Banca:</strong> Contratos, transferencias, autenticacion</li>
+        <li><strong>Legal:</strong> Documentos notariales, poderes, escrituras</li>
+        <li><strong>Gobierno:</strong> Identidad digital, votacion electronica</li>
+        <li><strong>Salud:</strong> Recetas electronicas, historiales clinicos</li>
+        <li><strong>Fintech:</strong> Firmas de transacciones, KYC</li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="text-green mb-4">Mandatos regulatorios</h3>
+      <ul>
+        <li><strong>NIST:</strong> Migracion a PQC obligatoria para gobierno USA</li>
+        <li><strong>NSA CNSA 2.0:</strong> PQC requerido para sistemas criticos (2025+)</li>
+        <li><strong>UE/ENISA:</strong> Recomendacion de transicion antes de 2030</li>
+        <li><strong>LATAM:</strong> Sin regulacion aun = oportunidad first mover</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 4: La Solucion -->
+<!-- ============================================================ -->
+<div class="slide bg-dark">
+  <span class="slide-number">03</span>
+  <span class="tag tag-green mb-6">LA SOLUCION</span>
+  <h1>QuantumGuard AI</h1>
+  <p class="subtitle mb-8" style="max-width:750px;">Plataforma de firmas digitales post-cuanticas con algoritmos certificados por NIST. Proteccion inmediata contra amenazas cuanticas futuras.</p>
+
+  <div class="grid-3 flex-1">
+    <div class="card">
+      <h3 class="text-blue mb-4">Firmas ML-DSA</h3>
+      <p style="color:var(--gray);font-size:15px;">FIPS 204 — Firmas lattice-based. Rapidas, compactas, quantum-resistant. Niveles de seguridad 2, 3 y 5.</p>
+      <div style="margin-top:16px;">
+        <span class="tag tag-blue">2,600+ firmas/seg</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3 class="text-purple mb-4">Firmas SLH-DSA</h3>
+      <p style="color:var(--gray);font-size:15px;">FIPS 205 — SPHINCS+ hash-based. Seguridad basada en funciones hash, sin supuestos algebraicos.</p>
+      <div style="margin-top:16px;">
+        <span class="tag tag-purple">Redundancia maxima</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3 class="text-amber mb-4">Key Encapsulation</h3>
+      <p style="color:var(--gray);font-size:15px;">FIPS 203 — ML-KEM (Kyber). Intercambio seguro de claves post-cuantico para cifrado extremo a extremo.</p>
+      <div style="margin-top:16px;">
+        <span class="tag tag-amber">ML-KEM-512/768/1024</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 5: Producto - Live Demo -->
+<!-- ============================================================ -->
+<div class="slide bg-light">
+  <span class="slide-number">04</span>
+  <span class="tag" style="background:rgba(59,130,246,0.1);color:#2563eb;">PRODUCTO LIVE</span>
+  <h2 style="margin-top:12px;color:#0f172a;">Plataforma desplegada en produccion</h2>
+  <p style="color:#64748b;font-size:18px;margin-bottom:24px;">postcuantica.io — Demo interactiva disponible</p>
+
+  <div class="grid-2 flex-1">
+    <div>
+      <div class="card mb-4">
+        <h3 style="color:#0f172a;">Flujo completo implementado</h3>
+        <ul style="margin-top:12px;">
+          <li style="color:#475569;">Registro y autenticacion (JWT)</li>
+          <li style="color:#475569;">Upload de documentos (PDF, DOC, TXT)</li>
+          <li style="color:#475569;">Firma con seleccion de algoritmo PQC</li>
+          <li style="color:#475569;">Verificacion publica de firmas</li>
+          <li style="color:#475569;">Descarga ZIP (documento + certificado cuantico)</li>
+          <li style="color:#475569;">Dashboard con metricas en tiempo real</li>
+        </ul>
+      </div>
+    </div>
+    <div>
+      <div class="card mb-4">
+        <h3 style="color:#0f172a;">Stack tecnologico</h3>
+        <table style="margin-top:12px;">
+          <tr><td style="color:#475569;font-weight:600;width:120px;">Frontend</td><td style="color:#64748b;">React 19 + TypeScript + Tailwind</td></tr>
+          <tr><td style="color:#475569;font-weight:600;">Backend</td><td style="color:#64748b;">Node.js + Express + Sequelize</td></tr>
+          <tr><td style="color:#475569;font-weight:600;">Crypto</td><td style="color:#64748b;">Python + FastAPI + liboqs</td></tr>
+          <tr><td style="color:#475569;font-weight:600;">DB</td><td style="color:#64748b;">PostgreSQL 15 + Redis 7</td></tr>
+          <tr><td style="color:#475569;font-weight:600;">Infra</td><td style="color:#64748b;">Docker + AWS EC2 + Cloudflare</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 6: Metricas de Performance -->
+<!-- ============================================================ -->
+<div class="slide bg-dark">
+  <span class="slide-number">05</span>
+  <span class="tag tag-green mb-6">RENDIMIENTO VERIFICADO</span>
+  <h2>Metricas reales de la plataforma</h2>
+  <p class="subtitle mb-8">Benchmarks ejecutados en produccion (AWS EC2 t3.small)</p>
+
+  <div class="grid-4 mb-8">
+    <div class="card" style="text-align:center;">
+      <div class="metric text-blue">2,600+</div>
+      <div class="metric-label">Firmas por segundo</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="metric text-green">5,100+</div>
+      <div class="metric-label">Verificaciones por segundo</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="metric text-purple">0.38ms</div>
+      <div class="metric-label">Latencia por firma</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="metric text-amber">9</div>
+      <div class="metric-label">Algoritmos soportados</div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div>
+      <h3 class="mb-4">Algoritmos de firma</h3>
+      <table>
+        <tr><th>Algoritmo</th><th>Nivel</th><th>Firma</th></tr>
+        <tr><td>ML-DSA-44</td><td><span class="text-green">Nivel 2</span></td><td>2.4 KB</td></tr>
+        <tr><td>ML-DSA-65</td><td><span class="text-blue">Nivel 3</span></td><td>3.2 KB</td></tr>
+        <tr><td>ML-DSA-87</td><td><span class="text-purple">Nivel 5</span></td><td>4.5 KB</td></tr>
+        <tr><td>SLH-DSA-SHA2-128s</td><td><span class="text-green">Nivel 1</span></td><td>7.7 KB</td></tr>
+        <tr><td>SLH-DSA-SHA2-256s</td><td><span class="text-purple">Nivel 5</span></td><td>29.2 KB</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3 class="mb-4">Key Encapsulation (ML-KEM)</h3>
+      <table>
+        <tr><th>Algoritmo</th><th>Nivel</th><th>Ciphertext</th></tr>
+        <tr><td>ML-KEM-512</td><td><span class="text-green">Nivel 1</span></td><td>768 B</td></tr>
+        <tr><td>ML-KEM-768</td><td><span class="text-blue">Nivel 3</span></td><td>1,088 B</td></tr>
+        <tr><td>ML-KEM-1024</td><td><span class="text-purple">Nivel 5</span></td><td>1,568 B</td></tr>
+      </table>
+      <p style="margin-top:16px;font-size:14px;color:var(--gray);">Hashing: SHA-3-256 (Keccak) — Quantum-resistant</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 7: Mercado -->
+<!-- ============================================================ -->
+<div class="slide bg-gradient">
+  <span class="slide-number">06</span>
+  <span class="tag tag-purple mb-6">MERCADO</span>
+  <h2>Oportunidad de mercado en LATAM</h2>
+  <p class="subtitle mb-8">First mover advantage en firmas post-cuanticas para America Latina</p>
+
+  <div class="grid-3 mb-6">
+    <div class="card" style="text-align:center;">
+      <div class="metric text-blue">$1.2B</div>
+      <div class="metric-label">Mercado de firma digital LATAM (2025)</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="metric text-green">23%</div>
+      <div class="metric-label">CAGR proyectado 2025-2030</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="metric text-purple">$3.4B</div>
+      <div class="metric-label">Mercado proyectado 2030</div>
+    </div>
+  </div>
+
+  <div class="grid-2 flex-1">
+    <div>
+      <h3 class="mb-4">Segmentos objetivo</h3>
+      <ul>
+        <li><strong>Banca y Fintech:</strong> Firmas de transacciones, contratos digitales</li>
+        <li><strong>Gobierno:</strong> Identidad digital, documentos oficiales</li>
+        <li><strong>Legal/Notarial:</strong> Escrituras, poderes, actas</li>
+        <li><strong>Salud:</strong> Recetas electronicas, consentimientos</li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="mb-4">Ventaja competitiva</h3>
+      <ul>
+        <li>Unica plataforma PQC certificada NIST en LATAM</li>
+        <li>Algoritmos FIPS 203/204/205 implementados</li>
+        <li>API REST lista para integracion enterprise</li>
+        <li>Validez de firma de 50+ anos</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 8: Caso de Validacion -->
+<!-- ============================================================ -->
+<div class="slide bg-dark">
+  <span class="slide-number">07</span>
+  <span class="tag tag-green mb-6">CASO DE VALIDACION</span>
+  <h2>Paraguay Bank — Caso piloto</h2>
+  <p class="subtitle mb-8">Validacion con institucion financiera real</p>
+
+  <div class="grid-3 mb-8">
+    <div class="card" style="text-align:center;">
+      <div class="metric text-blue">2.2M</div>
+      <div class="metric-label">Clientes del banco</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="metric text-green">$10.6B</div>
+      <div class="metric-label">Volumen anual procesado</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="metric text-amber">~500K</div>
+      <div class="metric-label">Firmas digitales estimadas/mes</div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div>
+      <h3 class="mb-4">Necesidades identificadas</h3>
+      <ul>
+        <li>Contratos de credito con firma digital quantum-safe</li>
+        <li>Autenticacion de transferencias internacionales</li>
+        <li>Cumplimiento proactivo de regulaciones PQC</li>
+        <li>Validez legal a largo plazo de documentos firmados</li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="mb-4">Propuesta de valor</h3>
+      <ul>
+        <li>Integracion via API REST (sin cambio de flujo)</li>
+        <li>Firma en &lt;1ms (imperceptible para el usuario)</li>
+        <li>Cumplimiento NIST previo a regulacion obligatoria</li>
+        <li>Diferenciador competitivo vs otros bancos</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 9: Modelo de Negocio -->
+<!-- ============================================================ -->
+<div class="slide bg-blue">
+  <span class="slide-number">08</span>
+  <span class="tag tag-green mb-6">MODELO DE NEGOCIO</span>
+  <h2>SaaS + API — Revenue recurrente</h2>
+  <p class="subtitle mb-6">Pricing basado en volumen de firmas mensuales</p>
+
+  <div class="grid-3 flex-1">
+    <div class="card" style="border-color:rgba(96,165,250,0.3);">
+      <div style="text-align:center;margin-bottom:20px;">
+        <span class="tag tag-blue">STARTER</span>
+        <div class="metric text-blue" style="margin-top:16px;">$299</div>
+        <div class="metric-label">/mes</div>
+      </div>
+      <ul>
+        <li>Hasta 5,000 firmas/mes</li>
+        <li>ML-DSA-44 (Nivel 2)</li>
+        <li>API REST + Dashboard</li>
+        <li>Soporte email</li>
+      </ul>
+    </div>
+    <div class="card" style="border-color:rgba(124,58,237,0.5);border-width:2px;">
+      <div style="text-align:center;margin-bottom:20px;">
+        <span class="tag tag-purple">BUSINESS</span>
+        <div class="metric text-purple" style="margin-top:16px;">$999</div>
+        <div class="metric-label">/mes</div>
+      </div>
+      <ul>
+        <li>Hasta 50,000 firmas/mes</li>
+        <li>Todos los algoritmos (ML-DSA + SLH-DSA)</li>
+        <li>ML-KEM key encapsulation</li>
+        <li>Soporte prioritario + SLA 99.9%</li>
+      </ul>
+    </div>
+    <div class="card" style="border-color:rgba(245,158,11,0.3);">
+      <div style="text-align:center;margin-bottom:20px;">
+        <span class="tag tag-amber">ENTERPRISE</span>
+        <div class="metric text-amber" style="margin-top:16px;">Custom</div>
+        <div class="metric-label">pricing</div>
+      </div>
+      <ul>
+        <li>Firmas ilimitadas</li>
+        <li>Deploy on-premise / VPC</li>
+        <li>HSM / KMS integration</li>
+        <li>Soporte 24/7 + consultor dedicado</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 10: Roadmap -->
+<!-- ============================================================ -->
+<div class="slide bg-dark">
+  <span class="slide-number">09</span>
+  <span class="tag tag-blue mb-6">ROADMAP</span>
+  <h2>Plan de ejecucion</h2>
+
+  <div class="grid-2 flex-1" style="margin-top:24px;">
+    <div>
+      <div class="timeline-item">
+        <div class="timeline-dot timeline-done"></div>
+        <div>
+          <h3 class="text-green" style="font-size:18px;">Q1 2026 — POC Completado</h3>
+          <p style="color:var(--gray);font-size:14px;">Plataforma full-stack desplegada, 9 algoritmos NIST, 67 tests, benchmarks verificados. Live en postcuantica.io</p>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-dot timeline-active"></div>
+        <div>
+          <h3 class="text-blue" style="font-size:18px;">Q2 2026 — Piloto comercial</h3>
+          <p style="color:var(--gray);font-size:14px;">Piloto con Paraguay Bank. Firmas hibridas (ECDSA + ML-DSA). Policy Engine. Integracion KMS.</p>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-dot timeline-pending"></div>
+        <div>
+          <h3 style="font-size:18px;">Q3 2026 — Producto comercial</h3>
+          <p style="color:var(--gray);font-size:14px;">Lanzamiento SaaS. SDK Python/JS/Java. Multi-tenancy. Certificacion SOC2.</p>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-dot timeline-pending"></div>
+        <div>
+          <h3 style="font-size:18px;">Q4 2026 — Expansion LATAM</h3>
+          <p style="color:var(--gray);font-size:14px;">Expansion a Brasil, Colombia, Mexico. Partnerships con fintechs. Cripto-agilidad full.</p>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card mb-4">
+        <h3 class="mb-4">Estado actual de la POC</h3>
+        <div style="margin-bottom:12px;">
+          <div class="flex justify-between mb-2" style="font-size:14px;">
+            <span>Crypto Service</span><span class="text-green">100%</span>
+          </div>
+          <div class="bar"><div class="bar-fill" style="width:100%;background:var(--green);"></div></div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <div class="flex justify-between mb-2" style="font-size:14px;">
+            <span>Backend API</span><span class="text-green">100%</span>
+          </div>
+          <div class="bar"><div class="bar-fill" style="width:100%;background:var(--green);"></div></div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <div class="flex justify-between mb-2" style="font-size:14px;">
+            <span>Frontend</span><span class="text-green">100%</span>
+          </div>
+          <div class="bar"><div class="bar-fill" style="width:100%;background:var(--green);"></div></div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <div class="flex justify-between mb-2" style="font-size:14px;">
+            <span>Deploy + SSL</span><span class="text-green">100%</span>
+          </div>
+          <div class="bar"><div class="bar-fill" style="width:100%;background:var(--green);"></div></div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <div class="flex justify-between mb-2" style="font-size:14px;">
+            <span>Firmas hibridas</span><span class="text-amber">Planificado</span>
+          </div>
+          <div class="bar"><div class="bar-fill" style="width:15%;background:var(--amber);"></div></div>
+        </div>
+        <div>
+          <div class="flex justify-between mb-2" style="font-size:14px;">
+            <span>Policy Engine</span><span class="text-amber">Planificado</span>
+          </div>
+          <div class="bar"><div class="bar-fill" style="width:10%;background:var(--amber);"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 11: El Ask -->
+<!-- ============================================================ -->
+<div class="slide bg-gradient flex-col">
+  <span class="slide-number">10</span>
+  <span class="tag tag-green mb-6">LA INVERSION</span>
+  <h1>Ronda Pre-Seed</h1>
+  <p class="subtitle mb-8" style="max-width:700px;">Buscamos capital para ejecutar el piloto comercial y lanzar el producto SaaS en LATAM.</p>
+
+  <div class="grid-3 mb-8">
+    <div class="card" style="text-align:center;border-color:rgba(16,185,129,0.3);">
+      <div class="metric text-green">$250K</div>
+      <div class="metric-label">Ronda Pre-Seed</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="metric text-blue">18</div>
+      <div class="metric-label">Meses de runway</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="metric text-purple">Q4 2026</div>
+      <div class="metric-label">Primer revenue target</div>
+    </div>
+  </div>
+
+  <div class="grid-2 flex-1">
+    <div>
+      <h3 class="mb-4">Uso de fondos</h3>
+      <div style="margin-bottom:12px;">
+        <div class="flex justify-between mb-2" style="font-size:14px;">
+          <span>Equipo de ingenieria (3 devs)</span><span>45%</span>
+        </div>
+        <div class="bar"><div class="bar-fill" style="width:45%;background:var(--blue);"></div></div>
+      </div>
+      <div style="margin-bottom:12px;">
+        <div class="flex justify-between mb-2" style="font-size:14px;">
+          <span>Infraestructura y seguridad</span><span>20%</span>
+        </div>
+        <div class="bar"><div class="bar-fill" style="width:20%;background:var(--purple);"></div></div>
+      </div>
+      <div style="margin-bottom:12px;">
+        <div class="flex justify-between mb-2" style="font-size:14px;">
+          <span>Ventas y marketing</span><span>20%</span>
+        </div>
+        <div class="bar"><div class="bar-fill" style="width:20%;background:var(--green);"></div></div>
+      </div>
+      <div>
+        <div class="flex justify-between mb-2" style="font-size:14px;">
+          <span>Legal y certificaciones</span><span>15%</span>
+        </div>
+        <div class="bar"><div class="bar-fill" style="width:15%;background:var(--amber);"></div></div>
+      </div>
+    </div>
+    <div>
+      <h3 class="mb-4">Milestones con la inversion</h3>
+      <ul>
+        <li>Piloto exitoso con Paraguay Bank</li>
+        <li>3 clientes enterprise pagando</li>
+        <li>Producto SaaS con multi-tenancy</li>
+        <li>SDKs en Python, JavaScript, Java</li>
+        <li>Certificacion SOC2 Type I</li>
+        <li>$15K MRR al mes 18</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 12: Cierre -->
+<!-- ============================================================ -->
+<div class="slide bg-dark flex-col justify-center items-center" style="text-align:center;">
+  <span class="slide-number"></span>
+  <div style="margin-bottom:24px;">
+    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+  </div>
+  <h1 style="font-size:48px;margin-bottom:24px;">QuantumGuard AI</h1>
+  <p class="subtitle" style="font-size:22px;margin-bottom:48px;">Protegiendo el futuro digital con criptografia post-cuantica</p>
+
+  <div class="flex gap-8" style="margin-bottom:48px;">
+    <div style="text-align:center;">
+      <div style="font-size:32px;font-weight:700;" class="text-blue">2,600+</div>
+      <div class="metric-label">firmas/seg</div>
+    </div>
+    <div style="text-align:center;">
+      <div style="font-size:32px;font-weight:700;" class="text-green">NIST</div>
+      <div class="metric-label">certificado</div>
+    </div>
+    <div style="text-align:center;">
+      <div style="font-size:32px;font-weight:700;" class="text-purple">50+</div>
+      <div class="metric-label">anos validez</div>
+    </div>
+    <div style="text-align:center;">
+      <div style="font-size:32px;font-weight:700;" class="text-amber">Live</div>
+      <div class="metric-label">en produccion</div>
+    </div>
+  </div>
+
+  <p style="font-size:20px;color:#60a5fa;font-weight:600;">postcuantica.io</p>
+  <p style="font-size:15px;color:rgba(255,255,255,0.4);margin-top:12px;">Confidencial — Marzo 2026</p>
+</div>
+
+</body>
+</html>
