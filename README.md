@@ -1,210 +1,216 @@
-# QuantumGuard AI - POC
+<div align="center">
 
-Sistema de firmas digitales post-cuanticas resistente a ataques de computadoras cuanticas.
+# QuantumGuard AI
 
-## Descripcion
+**Sistema de Firmas Digitales Post-Cuánticas**
 
-QuantumGuard AI es una plataforma que implementa firmas digitales utilizando el algoritmo **ML-DSA (CRYSTALS-Dilithium)**, certificado por el NIST como estandar post-cuantico. Protege documentos criticos con criptografia que permanecera segura incluso contra computadoras cuanticas futuras.
+[![NIST FIPS 204](https://img.shields.io/badge/NIST-FIPS%20204-blue)](https://csrc.nist.gov/pubs/fips/204/final)
+[![NIST FIPS 205](https://img.shields.io/badge/NIST-FIPS%20205-blue)](https://csrc.nist.gov/pubs/fips/205/final)
+[![NIST FIPS 203](https://img.shields.io/badge/NIST-FIPS%20203-blue)](https://csrc.nist.gov/pubs/fips/203/final)
+[![Live](https://img.shields.io/badge/Live-postcuantica.io-green)](https://postcuantica.io)
 
-### Caracteristicas Principales
+Plataforma de firma digital resistente a computadoras cuánticas. Implementa los estándares NIST post-cuánticos (ML-DSA, SLH-DSA, ML-KEM) con rendimiento de producción.
 
-- **Firmas Post-Cuanticas**: ML-DSA-44, ML-DSA-65, ML-DSA-87 (Dilithium)
-- **Performance**: 2,600+ firmas por segundo
-- **Verificacion Instantanea**: <1ms por verificacion
-- **Cumplimiento NIST**: Algoritmos certificados FIPS 204
+[Demo en vivo](https://postcuantica.io) | [Documentación API](#api-endpoints) | [Quick Start](#quick-start)
+
+</div>
+
+---
+
+## Por qué existe esto
+
+Los algoritmos de firma digital actuales (RSA, ECDSA) serán vulnerables cuando existan computadoras cuánticas suficientemente potentes. QuantumGuard implementa los nuevos estándares NIST post-cuánticos para proteger documentos **hoy** con criptografía que permanecerá segura **décadas**.
+
+### Rendimiento real medido
+
+| Operación | Latencia | Throughput |
+|-----------|----------|------------|
+| Generación keypair | 0.15ms | 6,634/seg |
+| Firma de documento | 0.38ms | 2,661/seg |
+| Verificación | 0.19ms | 5,136/seg |
+
+### Algoritmos soportados
+
+| Estándar | Algoritmo | Niveles de seguridad |
+|----------|-----------|---------------------|
+| FIPS 204 | ML-DSA (Dilithium) | 44, 65, 87 |
+| FIPS 205 | SLH-DSA (SPHINCS+) | SHA2-128s, 192s, 256s |
+| FIPS 203 | ML-KEM (Kyber) | 512, 768, 1024 |
 
 ## Arquitectura
 
 ```
-+------------------+     +------------------+     +------------------+
-|     Frontend     | --> |    Backend API   | --> |  Crypto Service  |
-|  React + Vite    |     |  Node.js/Express |     |  Python/FastAPI  |
-|   Tailwind CSS   |     |    TypeScript    |     |     liboqs       |
-+------------------+     +------------------+     +------------------+
-                                  |
-                                  v
-                         +------------------+
-                         |   PostgreSQL     |
-                         |    Database      |
-                         +------------------+
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│    Frontend     │────▶│   Backend API   │────▶│ Crypto Service  │
+│ React 19 + Vite│     │ Node.js/Express │     │ Python + liboqs │
+│ Tailwind CSS v4│     │   TypeScript    │     │    FastAPI       │
+└─────────────────┘     └────────┬────────┘     └─────────────────┘
+                                 │
+                    ┌────────────┼────────────┐
+                    ▼                         ▼
+           ┌──────────────┐          ┌──────────────┐
+           │ PostgreSQL 15│          │   Redis 7    │
+           │   (datos)    │          │ (cache/rate) │
+           └──────────────┘          └──────────────┘
 ```
+
+| Servicio | Puerto | Tecnología |
+|----------|--------|------------|
+| Frontend | 3000 (dev) / 80 (prod) | React 19 + Nginx |
+| Backend | 5000 | Node.js + Express + TypeScript |
+| Crypto Service | 8001 | Python 3.11 + FastAPI + liboqs |
+| PostgreSQL | 5432 | postgres:15 |
+| Redis | 6381 | redis:7-alpine |
 
 ## Quick Start
 
-### Prerequisitos
-
-- Docker & Docker Compose
-- Node.js 18+
-- Python 3.10+
-- Git
-
-### Instalacion Rapida
+### Con Docker (recomendado)
 
 ```bash
-# 1. Clonar y entrar al proyecto
+git clone https://github.com/luisrodriguez-postcuantica/quantumguard-poc.git
 cd quantumguard-poc
+docker compose up -d
+```
 
-# 2. Levantar base de datos
-docker-compose up -d postgres redis
+La aplicación estará disponible en `http://localhost:3000`
 
-# 3. Iniciar Crypto Service
+### Desarrollo local
+
+```bash
+# Base de datos
+docker compose up -d postgres redis
+
+# Crypto Service (Python)
 cd crypto-service
-python -m venv venv
-source venv/bin/activate
+python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8001 &
 
-# 4. Iniciar Backend
+# Backend (Node.js)
 cd ../backend
-npm install
-npm run dev &
+npm install && npm run dev &
 
-# 5. Iniciar Frontend
+# Frontend (React)
 cd ../frontend
-npm install
-npm run dev
+npm install && npm run dev
 ```
 
-El frontend estara disponible en `http://localhost:3000`
+### Variables de entorno
 
-## Estructura del Proyecto
+Copiar `.env.example` a `.env` en la raíz y en `backend/`:
 
-```
-quantumguard-poc/
-├── frontend/           # React + TypeScript + Tailwind
-│   ├── src/
-│   │   ├── components/ # Componentes UI reutilizables
-│   │   ├── pages/      # Paginas de la aplicacion
-│   │   ├── services/   # Servicios API
-│   │   ├── hooks/      # Custom React hooks
-│   │   ├── context/    # React Context providers
-│   │   └── types/      # TypeScript types
-│   └── e2e/            # Tests E2E con Playwright
-├── backend/            # Node.js + Express + TypeScript
-│   ├── src/
-│   │   ├── controllers/
-│   │   ├── services/
-│   │   ├── models/
-│   │   ├── routes/
-│   │   └── middleware/
-│   └── tests/
-├── crypto-service/     # Python + FastAPI + liboqs
-│   ├── main.py
-│   └── tests/
-├── database/           # SQL schemas
-└── docker/             # Docker configs
+```bash
+cp .env.example .env
+cp backend/.env.example backend/.env
 ```
 
 ## API Endpoints
 
-### Autenticacion
+### Autenticación
 
-| Endpoint | Metodo | Descripcion |
-|----------|--------|-------------|
-| `/api/auth/register` | POST | Registrar usuario |
-| `/api/auth/login` | POST | Iniciar sesion |
-| `/api/auth/refresh` | POST | Refrescar token |
-| `/api/auth/logout` | POST | Cerrar sesion |
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | Registrar usuario |
+| POST | `/api/auth/login` | Iniciar sesión |
+| POST | `/api/auth/refresh` | Refrescar token |
+| POST | `/api/auth/logout` | Cerrar sesión |
+| GET | `/api/auth/me` | Perfil del usuario actual |
 
 ### Documentos
 
-| Endpoint | Metodo | Descripcion |
-|----------|--------|-------------|
-| `/api/documents` | GET | Listar documentos |
-| `/api/documents/upload` | POST | Subir documento |
-| `/api/documents/:id` | GET | Obtener documento |
-| `/api/documents/:id/sign` | POST | Firmar documento |
-| `/api/documents/verify` | POST | Verificar firma |
-| `/api/documents/stats` | GET | Estadisticas |
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/api/documents` | Listar documentos del usuario |
+| POST | `/api/documents/upload` | Subir documento |
+| GET | `/api/documents/:id` | Obtener metadata |
+| GET | `/api/documents/:id/download` | Descargar documento firmado (ZIP) |
+| POST | `/api/documents/:id/sign` | Firmar con algoritmo PQ |
+| POST | `/api/documents/verify` | Verificar firma |
+| GET | `/api/documents/stats` | Estadísticas |
 
 ### Crypto Service
 
-| Endpoint | Metodo | Descripcion |
-|----------|--------|-------------|
-| `/crypto/keypair/generate` | POST | Generar par de claves |
-| `/crypto/sign` | POST | Firmar datos |
-| `/crypto/verify` | POST | Verificar firma |
-| `/crypto/algorithms` | GET | Algoritmos disponibles |
-| `/crypto/health` | GET | Health check |
-
-## Tecnologias
-
-### Frontend
-- React 19 + TypeScript
-- Vite (build tool)
-- Tailwind CSS v4
-- React Router v7
-- Axios
-- Lucide Icons
-- Playwright (E2E testing)
-
-### Backend
-- Node.js 18+
-- Express 4
-- TypeScript
-- Sequelize (ORM)
-- JWT (autenticacion)
-- Jest (testing)
-
-### Crypto Service
-- Python 3.10+
-- FastAPI
-- liboqs (Open Quantum Safe)
-- ML-DSA (Dilithium)
-
-### Base de Datos
-- PostgreSQL 15+
-- Redis (cache/rate limiting)
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| POST | `/crypto/keypair/generate` | Generar par de claves PQ |
+| POST | `/crypto/sign` | Firmar datos |
+| POST | `/crypto/verify` | Verificar firma |
+| GET | `/crypto/algorithms` | Algoritmos disponibles |
+| POST | `/crypto/kem/encapsulate` | Key encapsulation (ML-KEM) |
+| POST | `/crypto/kem/decapsulate` | Key decapsulation |
+| GET | `/crypto/health` | Health check |
 
 ## Testing
 
 ```bash
-# Tests unitarios del backend
+# Tests unitarios backend (67 tests)
 cd backend && npm test
 
-# Tests del crypto service
+# Tests crypto service
 cd crypto-service && pytest
 
-# Tests E2E del frontend
-cd frontend && npm run test:e2e
+# Tests E2E contra producción (18 tests)
+cd frontend && E2E_BASE_URL=https://postcuantica.io npx playwright test
 
-# Ver reporte de tests E2E
-npm run test:e2e:report
+# Tests E2E locales
+cd frontend && npm run test:e2e
+```
+
+## Estructura del proyecto
+
+```
+quantumguard-poc/
+├── frontend/           # React 19 + TypeScript + Tailwind v4
+│   ├── src/
+│   │   ├── components/ # UI components (Button, Card, FileUpload...)
+│   │   ├── pages/      # Home, Dashboard, SignDocument, Verify...
+│   │   ├── services/   # API clients
+│   │   ├── context/    # AuthContext (JWT)
+│   │   └── hooks/      # useDocuments, etc.
+│   └── e2e/            # 18 tests Playwright
+├── backend/            # Node.js + Express + TypeScript + Sequelize
+│   ├── src/
+│   │   ├── controllers/  # auth, documents, kem, users
+│   │   ├── services/     # crypto, auth, storage
+│   │   ├── models/       # User, Document, Signature (Sequelize)
+│   │   └── middleware/   # auth, rateLimit, validation
+│   └── tests/           # 67 tests Jest
+├── crypto-service/     # Python 3.11 + FastAPI + liboqs
+│   ├── main.py         # Endpoints firma/verificación/KEM
+│   ├── pki.py          # X.509 certificates
+│   └── pdf_seal.py     # PDF quantum seal
+├── database/           # SQL schemas + seeds
+├── demo/               # Video demo + pitch deck
+├── docker-compose.yml  # Desarrollo
+└── docker-compose.prod.yml  # Producción
 ```
 
 ## Seguridad
 
-- **Algoritmos**: ML-DSA-44/65/87 (NIST FIPS 204)
-- **Validez de Firmas**: 50+ anos (quantum-safe)
-- **Autenticacion**: JWT con refresh tokens
-- **Rate Limiting**: Proteccion anti-brute force
-- **CORS**: Configuracion restrictiva
-- **Helmet**: Headers de seguridad HTTP
-- **Validacion**: Sanitizacion de inputs
+- **Criptografía**: ML-DSA + SLH-DSA + ML-KEM (NIST FIPS 203/204/205)
+- **Hashing**: SHA-3-256 (Keccak, quantum-resistant)
+- **Autenticación**: JWT con refresh tokens
+- **Rate limiting**: Por IP y por usuario
+- **CORS + Helmet**: Headers de seguridad HTTP
+- **Validación**: Sanitización en todas las entradas
+- **Claves privadas**: Nunca expuestas en respuestas API
 
-## Performance
+## Deploy
 
-| Operacion | Tiempo | Throughput |
-|-----------|--------|------------|
-| Generacion de keypair | 0.15ms | 6,634/seg |
-| Firma de documento | 0.38ms | 2,661/seg |
-| Verificacion | 0.19ms | 5,136/seg |
-
-## Estado del Proyecto
-
-- [x] Semana 1: Fundacion (99%)
-- [x] Semana 2: Backend API (107%)
-- [x] Semana 3: Frontend (93%)
-- [ ] Semana 4: Testing & Demo
-
-**Progreso Total: 79%**
+Actualmente desplegado en AWS EC2 (t3.small) con:
+- Docker Compose para orquestación
+- Nginx como reverse proxy
+- Cloudflare para SSL/CDN
+- Dominio: https://postcuantica.io
 
 ## Licencia
 
-Propietario - RYP Cloud
+Propietario - Post Cuantica Lab SpA. Todos los derechos reservados.
 
 ---
 
-**Version:** 0.3.0 (POC)
-**Fecha:** Febrero 2026
-**Estado:** Frontend Completado
+<div align="center">
+
+**Post Cuantica Lab SpA** | https://postcuantica.io
+
+</div>
