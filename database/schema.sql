@@ -66,6 +66,8 @@ CREATE TABLE IF NOT EXISTS signatures (
     valid_until TIMESTAMP,
     quantum_safe BOOLEAN DEFAULT true,
     signature_size INTEGER,
+    signer_cert TEXT,
+    cms_signature TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
