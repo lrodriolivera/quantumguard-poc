@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PenTool, Shield, CheckCircle, FileText, Clock, Globe, Layers } from 'lucide-react';
+import { PenTool, Shield, CheckCircle, FileText, Clock, Globe, Layers, Users, Plus, X, Mail } from 'lucide-react';
 import { useDocuments } from '../hooks/useDocuments';
-import type { SignatureCountry } from '../types';
+import { envelopeService } from '../services/envelope.service';
+import type { SignatureCountry, Envelope, EnvelopeSignerInput } from '../types';
 import {
   Card,
   CardContent,
@@ -12,6 +13,7 @@ import {
   FileUpload,
   Alert,
   Spinner,
+  Input,
 } from '../components/ui';
 
 const ALGORITHMS = [
@@ -78,12 +80,17 @@ export default function SignDocument() {
   const [selectedAlgorithm, setSelectedAlgorithm] = useState(ALGORITHMS[0].id);
   const [country, setCountry] = useState<SignatureCountry>('CL');
   const [hybrid, setHybrid] = useState(true);
-  const [step, setStep] = useState<'upload' | 'signing' | 'complete'>('upload');
+  const [signerMode, setSignerMode] = useState<'self' | 'invite'>('self');
+  const [signers, setSigners] = useState<EnvelopeSignerInput[]>([{ name: '', email: '', phone: '' }]);
+  const [sequential, setSequential] = useState(false);
+  const [step, setStep] = useState<'upload' | 'signing' | 'complete' | 'sent'>('upload');
   const [signatureResult, setSignatureResult] = useState<{
     documentId: string;
     signedAt: string;
     algorithm: string;
   } | null>(null);
+  const [sentEnvelope, setSentEnvelope] = useState<Envelope | null>(null);
+  const [envelopeError, setEnvelopeError] = useState<string | null>(null);
 
   const { uploadDocument, signDocument, isLoading, error, clearError } = useDocuments();
   const navigate = useNavigate();
@@ -93,17 +100,41 @@ export default function SignDocument() {
     clearError();
   };
 
+  const validSigners = signers
+    .map((s) => ({ name: s.name.trim(), email: s.email.trim(), phone: s.phone?.trim() || undefined }))
+    .filter((s) => s.name && s.email);
+  const canInvite = signerMode === 'self' || validSigners.length > 0;
+
+  const addSignerRow = () => setSigners((rows) => [...rows, { name: '', email: '', phone: '' }]);
+  const removeSignerRow = (index: number) =>
+    setSigners((rows) => (rows.length > 1 ? rows.filter((_, i) => i !== index) : rows));
+  const updateSignerRow = (index: number, patch: Partial<EnvelopeSignerInput>) =>
+    setSigners((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+
   const handleSign = async () => {
     if (!selectedFile) return;
 
     setStep('signing');
     clearError();
+    setEnvelopeError(null);
 
     try {
-      // First upload the document
       const uploadResult = await uploadDocument(selectedFile);
 
-      // Then sign it (pass file for crypto signing)
+      if (signerMode === 'invite') {
+        const envelope = await envelopeService.createEnvelope({
+          document_id: uploadResult.id,
+          mode: sequential ? 'sequential' : 'parallel',
+          country,
+          algorithm: selectedAlgorithm,
+          hybrid,
+          signers: validSigners,
+        });
+        setSentEnvelope(envelope);
+        setStep('sent');
+        return;
+      }
+
       const signResult = await signDocument(uploadResult.id, selectedFile, selectedAlgorithm, { country, hybrid });
 
       setSignatureResult({
@@ -112,7 +143,11 @@ export default function SignDocument() {
         algorithm: selectedAlgorithm,
       });
       setStep('complete');
-    } catch {
+    } catch (err) {
+      if (signerMode === 'invite') {
+        const anyErr = err as { response?: { data?: { message?: string } } };
+        setEnvelopeError(anyErr.response?.data?.message || 'No se pudo crear la solicitud de firma');
+      }
       setStep('upload');
     }
   };
@@ -126,6 +161,11 @@ export default function SignDocument() {
   const handleSignAnother = () => {
     setSelectedFile(null);
     setSignatureResult(null);
+    setSentEnvelope(null);
+    setSignerMode('self');
+    setSigners([{ name: '', email: '', phone: '' }]);
+    setSequential(false);
+    setEnvelopeError(null);
     setStep('upload');
     clearError();
   };
@@ -309,14 +349,114 @@ export default function SignDocument() {
                 </CardContent>
               </Card>
 
+              <Card>
+                <CardHeader>
+                  <CardTitle>4. ¿Quién firma?</CardTitle>
+                </CardHeader>
+                <CardContent className="py-0 space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setSignerMode('self')}
+                      className={`rounded-xl border-2 p-4 text-left transition-colors ${
+                        signerMode === 'self' ? 'border-quantum-500 bg-quantum-50' : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <span className="flex items-center font-semibold text-gray-900">
+                        <PenTool className="w-4 h-4 mr-1.5" /> Solo yo
+                      </span>
+                      <span className="block text-sm text-gray-500 mt-1">Firmas tu propio documento ahora mismo.</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSignerMode('invite')}
+                      className={`rounded-xl border-2 p-4 text-left transition-colors ${
+                        signerMode === 'invite' ? 'border-quantum-500 bg-quantum-50' : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <span className="flex items-center font-semibold text-gray-900">
+                        <Users className="w-4 h-4 mr-1.5" /> Invitar a otras personas
+                      </span>
+                      <span className="block text-sm text-gray-500 mt-1">
+                        Les llega un enlace por correo; firman sin crear cuenta.
+                      </span>
+                    </button>
+                  </div>
+
+                  {signerMode === 'invite' && (
+                    <div className="space-y-4 pt-2">
+                      {envelopeError && (
+                        <Alert variant="error" onClose={() => setEnvelopeError(null)}>
+                          {envelopeError}
+                        </Alert>
+                      )}
+                      <div className="space-y-3">
+                        {signers.map((signer, index) => (
+                          <div key={index} className="flex gap-2 items-start bg-gray-50 rounded-xl p-3">
+                            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <Input
+                                placeholder="Nombre completo"
+                                value={signer.name}
+                                onChange={(e) => updateSignerRow(index, { name: e.target.value })}
+                              />
+                              <Input
+                                type="email"
+                                placeholder="correo@ejemplo.com"
+                                value={signer.email}
+                                onChange={(e) => updateSignerRow(index, { email: e.target.value })}
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeSignerRow(index)}
+                              className="p-2 text-gray-400 hover:text-red-500"
+                              aria-label="Quitar firmante"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <Button variant="outline" size="sm" onClick={addSignerRow} leftIcon={<Plus className="w-4 h-4" />}>
+                        Agregar otro firmante
+                      </Button>
+
+                      {validSigners.length > 1 && (
+                        <label className="flex items-start space-x-3 cursor-pointer rounded-xl border border-gray-200 p-4 hover:border-gray-300">
+                          <input
+                            type="checkbox"
+                            checked={sequential}
+                            onChange={(e) => setSequential(e.target.checked)}
+                            className="mt-1 h-4 w-4 rounded border-gray-300 text-quantum-600 focus:ring-quantum-500"
+                          />
+                          <span>
+                            <span className="font-medium text-gray-900">Firma secuencial</span>
+                            <span className="block text-sm text-gray-500 mt-1">
+                              Cada firmante espera su turno en el orden indicado. Si lo dejas sin marcar, a todos
+                              les llega la invitación al mismo tiempo.
+                            </span>
+                          </span>
+                        </label>
+                      )}
+
+                      <p className="text-xs text-gray-500 flex items-center">
+                        <Mail className="w-3.5 h-3.5 mr-1" /> Cada firmante confirma su identidad con un código
+                        enviado a su correo antes de poder firmar.
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
               <Button
                 onClick={handleSign}
                 className="w-full"
                 size="lg"
                 isLoading={isLoading}
+                disabled={!canInvite}
                 leftIcon={<PenTool className="w-5 h-5" />}
               >
-                Firmar Documento
+                {signerMode === 'invite' ? 'Enviar solicitud de firma' : 'Firmar Documento'}
               </Button>
             </>
           )}
@@ -408,6 +548,62 @@ export default function SignDocument() {
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <Button onClick={handleViewDocument} variant="primary">
                   Ver Documento
+                </Button>
+                <Button onClick={handleSignAnother} variant="outline">
+                  Firmar Otro
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Sent Step: envelope created, waiting on external signers */}
+      {step === 'sent' && sentEnvelope && (
+        <Card>
+          <CardContent>
+            <div className="text-center py-8">
+              <div className="w-16 h-16 bg-quantum-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Mail className="w-8 h-8 text-quantum-600" />
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">Solicitud de firma enviada</h3>
+              <p className="text-gray-600 mb-6">
+                {sentEnvelope.mode === 'sequential'
+                  ? 'Avisamos al primer firmante por correo. Los demás recibirán su turno en orden.'
+                  : 'Avisamos a todos los firmantes por correo al mismo tiempo.'}
+              </p>
+
+              <div className="bg-gray-50 rounded-xl p-6 mb-6 text-left max-w-sm mx-auto">
+                <h4 className="font-medium text-gray-900 mb-4">Firmantes:</h4>
+                <div className="space-y-3">
+                  {sentEnvelope.signers
+                    .slice()
+                    .sort((a, b) => a.order_index - b.order_index)
+                    .map((signer) => (
+                      <div key={signer.id} className="flex items-center justify-between">
+                        <span className="text-gray-700">
+                          {signer.name}
+                          <span className="block text-xs text-gray-400">{signer.email}</span>
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                            signer.status === 'signed'
+                              ? 'bg-green-100 text-green-700'
+                              : signer.status === 'notified' || signer.status === 'viewed'
+                                ? 'bg-blue-100 text-blue-700'
+                                : 'bg-gray-100 text-gray-600'
+                          }`}
+                        >
+                          {signer.status === 'signed' ? 'Firmó' : signer.status === 'notified' ? 'Avisado' : signer.status === 'viewed' ? 'Abrió el enlace' : 'Pendiente'}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Button onClick={() => navigate('/documents')} variant="primary">
+                  Ver en Documentos
                 </Button>
                 <Button onClick={handleSignAnother} variant="outline">
                   Firmar Otro

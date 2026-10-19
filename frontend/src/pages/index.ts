@@ -7,3 +7,4 @@ export { default as VerifyDocument } from './VerifyDocument';
 export { default as Documents } from './Documents';
 export { default as Profile } from './Profile';
 export { default as KEMExplorer } from './KEMExplorer';
+export { default as SignLink } from './SignLink';

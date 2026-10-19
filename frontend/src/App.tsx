@@ -11,6 +11,7 @@ import {
   Documents,
   Profile,
   KEMExplorer,
+  SignLink,
 } from './pages';
 
 function App() {
@@ -21,6 +22,8 @@ function App() {
           {/* Public routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          {/* Signer link: no account, no app chrome */}
+          <Route path="/firmar/:token" element={<SignLink />} />
 
           {/* Routes with Layout */}
           <Route element={<Layout />}>

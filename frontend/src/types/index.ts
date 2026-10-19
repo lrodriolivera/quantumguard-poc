@@ -87,6 +87,65 @@ export interface SignOptions {
   hybrid: boolean;
 }
 
+// Envelopes: a document routed to one or more signers (self and/or people
+// with no QuantumGuard account), confirmed by an email OTP before signing.
+export type EnvelopeMode = 'parallel' | 'sequential';
+export type EnvelopeStatus = 'draft' | 'sent' | 'completed' | 'voided';
+export type EnvelopeSignerStatus =
+  | 'pending' | 'notified' | 'viewed' | 'otp_verified' | 'signed' | 'declined';
+
+export interface EnvelopeSignerInput {
+  name: string;
+  email: string;
+  phone?: string;
+}
+
+export interface EnvelopeSignerSummary {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  order_index: number;
+  status: EnvelopeSignerStatus;
+  signature_id: string | null;
+  notified_at: string | null;
+  signed_at: string | null;
+  declined_at: string | null;
+  decline_reason: string | null;
+}
+
+export interface Envelope {
+  id: string;
+  document_id: string;
+  owner_user_id: string;
+  country: SignatureCountry;
+  algorithm: string;
+  hybrid: boolean;
+  mode: EnvelopeMode;
+  status: EnvelopeStatus;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  signers: EnvelopeSignerSummary[];
+  document?: Document;
+}
+
+export interface CreateEnvelopeRequest {
+  document_id: string;
+  mode: EnvelopeMode;
+  country: SignatureCountry;
+  algorithm?: string;
+  hybrid?: boolean;
+  signers: EnvelopeSignerInput[];
+}
+
+export interface PublicSignerInfo {
+  envelope: { mode: EnvelopeMode; status: EnvelopeStatus };
+  document: { filename: string };
+  owner_name: string;
+  signer: { name: string; email: string; order_index: number; status: EnvelopeSignerStatus };
+}
+
 export interface VerificationSigner {
   name: string | null;
   email: string | null;
