@@ -7,9 +7,11 @@ import { sequelize, testConnection, syncDatabase } from './database';
 import { User } from './user.model';
 import { Document } from './document.model';
 import { Signature } from './signature.model';
+import { Envelope } from './envelope.model';
+import { EnvelopeSigner } from './envelope-signer.model';
 
 // Initialize all models
-sequelize.addModels([User, Document, Signature]);
+sequelize.addModels([User, Document, Signature, Envelope, EnvelopeSigner]);
 
 /**
  * Initialize database connection and models
@@ -44,9 +46,13 @@ export {
   User,
   Document,
   Signature,
+  Envelope,
+  EnvelopeSigner,
 };
 
 // Export types
 export type { User as UserType } from './user.model';
 export type { Document as DocumentType } from './document.model';
 export type { Signature as SignatureType } from './signature.model';
+export type { Envelope as EnvelopeType } from './envelope.model';
+export type { EnvelopeSigner as EnvelopeSignerType } from './envelope-signer.model';

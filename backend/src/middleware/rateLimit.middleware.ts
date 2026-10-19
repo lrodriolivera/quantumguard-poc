@@ -137,3 +137,28 @@ export const verifyLimiter = rateLimit({
   maxRequests: 30,
   message: 'Too many verification requests, please try again later',
 });
+
+// Creating/sending envelopes: each one sends real emails, keep it tight
+export const envelopeLimiter = rateLimit({
+  name: 'envelope',
+  windowMs: 60 * 1000,
+  maxRequests: 10,
+  message: 'Too many envelope requests, please try again later',
+});
+
+// Public signing-link actions (IP-keyed, no account): fetch/decline/sign
+export const publicSignLimiter = rateLimit({
+  name: 'public-sign',
+  windowMs: 60 * 1000,
+  maxRequests: 20,
+  message: 'Too many requests, please try again later',
+});
+
+// OTP request/verify: each send costs a real email and a code brute-force
+// attempt is a direct attack on the OTP itself — strict on purpose.
+export const otpLimiter = rateLimit({
+  name: 'otp',
+  windowMs: 60 * 1000,
+  maxRequests: 10,
+  message: 'Too many verification code requests, please try again later',
+});

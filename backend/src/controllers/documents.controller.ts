@@ -31,6 +31,7 @@ import {
 import { Sequelize } from 'sequelize-typescript';
 import { createHash } from 'crypto';
 import archiver from 'archiver';
+import { QuotaExceededError, assertWithinSignatureQuota } from '../utils/plan.utils';
 
 /** Indexed lookup (md5 functional index) of a signature by its exact value. */
 function findSignatureRecord(signatureData: string): Promise<Signature | null> {
@@ -169,6 +170,12 @@ export class DocumentsController {
       }
 
       const user = await User.findByPk(req.userId);
+      if (!user) {
+        res.status(401).json({ error: 'Unauthorized', message: 'User not found' });
+        return;
+      }
+      await assertWithinSignatureQuota(user.id, user.plan);
+
       const signed = await cryptoService.signDocumentX509(
         fileBuffer,
         document.filename,
@@ -228,6 +235,13 @@ export class DocumentsController {
     } catch (error: any) {
       if (error instanceof CryptoInputError) {
         res.status(400).json({ error: 'Bad Request', message: error.message });
+        return;
+      }
+      if (error instanceof QuotaExceededError) {
+        res.status(402).json({
+          error: 'Payment Required',
+          message: `Alcanzaste el límite de ${error.limit} firmas de tu plan ${error.plan} este mes. Actualiza tu plan para seguir firmando.`,
+        });
         return;
       }
       console.error('Sign document error:', error);

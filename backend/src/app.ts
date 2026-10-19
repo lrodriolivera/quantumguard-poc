@@ -9,6 +9,8 @@ import authRoutes from './routes/auth.routes';
 import usersRoutes from './routes/users.routes';
 import kemRoutes from './routes/kem.routes';
 import pkiRoutes from './routes/pki.routes';
+import envelopeRoutes from './routes/envelope.routes';
+import signRoutes from './routes/sign.routes';
 
 // Import middleware
 import { generalLimiter, authLimiter } from './middleware/rateLimit.middleware';
@@ -89,6 +91,8 @@ class App {
     this.app.use('/api/users', usersRoutes);
     this.app.use('/api/kem', kemRoutes);
     this.app.use('/api/pki', pkiRoutes);
+    this.app.use('/api/envelopes', envelopeRoutes);
+    this.app.use('/api/sign', signRoutes);
   }
 
   private errorHandlers(): void {

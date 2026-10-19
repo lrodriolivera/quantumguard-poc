@@ -5,7 +5,7 @@
  */
 
 jest.mock('../../src/models/document.model', () => ({ Document: { findOne: jest.fn() } }));
-jest.mock('../../src/models/signature.model', () => ({ Signature: { findOne: jest.fn(), create: jest.fn() } }));
+jest.mock('../../src/models/signature.model', () => ({ Signature: { findOne: jest.fn(), create: jest.fn(), count: jest.fn() } }));
 jest.mock('../../src/models/user.model', () => ({ User: { findByPk: jest.fn() } }));
 jest.mock('../../src/services/storage.service', () => ({
   storageService: { loadFilePath: jest.fn(), calculateHash: jest.fn(), saveFile: jest.fn() },
@@ -73,6 +73,7 @@ const x509Result = (overrides: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   jest.resetAllMocks();
   mocked(storageService.calculateHash).mockReturnValue('hash-of-upload');
+  mocked(Signature.count).mockResolvedValue(0);
 });
 
 describe('verifySignature', () => {
@@ -225,7 +226,7 @@ describe('signDocument', () => {
     mocked(Document.findOne).mockResolvedValue(storedDoc());
     mocked(storageService.loadFilePath).mockResolvedValue(stored);
     mocked(storageService.calculateHash).mockReturnValue('stored-hash');
-    mocked(User.findByPk).mockResolvedValue({ first_name: 'Rene', last_name: 'Carreño', email: 'rene@example.com' });
+    mocked(User.findByPk).mockResolvedValue({ id: 'owner-1', plan: 'free', first_name: 'Rene', last_name: 'Carreño', email: 'rene@example.com' });
     mocked(Signature.create).mockResolvedValue({ toSafeJSON: () => ({}) });
     mocked(storageService.saveFile).mockResolvedValue({ filePath: '/uploads/u/contrato_firmado.pdf', hash: 'pdf-hash' });
     return stored;
@@ -291,6 +292,17 @@ describe('signDocument', () => {
     expect(cryptoService.signDocumentX509).not.toHaveBeenCalled();
     expect(Signature.create).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(500);
+  });
+
+  it("rejects once the owner's monthly signature quota is exhausted", async () => {
+    arrangeStored();
+    mocked(Signature.count).mockResolvedValue(5); // free plan limit
+    const res = mockRes();
+
+    await documentsController.signDocument({ userId: 'u1', params: { id: 'doc-1' }, body: {} } as any, res);
+
+    expect(cryptoService.signDocumentX509).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(402);
   });
 
   it('does not fall back to uncertified signing when the PKI fails', async () => {

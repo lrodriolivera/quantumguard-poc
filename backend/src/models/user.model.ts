@@ -48,6 +48,22 @@ export class User extends Model {
   @Column(DataType.BOOLEAN)
   is_active!: boolean;
 
+  @Default('free')
+  @Column(DataType.STRING(20))
+  plan!: string;
+
+  @Column(DataType.STRING(100))
+  stripe_customer_id?: string;
+
+  @Column(DataType.STRING(100))
+  stripe_subscription_id?: string;
+
+  @Column(DataType.STRING(30))
+  stripe_subscription_status?: string;
+
+  @Column(DataType.DATE)
+  plan_renews_at?: Date;
+
   @CreatedAt
   @Column(DataType.DATE)
   created_at!: Date;
@@ -80,6 +96,8 @@ export class User extends Model {
       first_name: this.first_name,
       last_name: this.last_name,
       is_active: this.is_active,
+      plan: this.plan,
+      plan_renews_at: this.plan_renews_at,
       created_at: this.created_at,
       updated_at: this.updated_at,
     };
