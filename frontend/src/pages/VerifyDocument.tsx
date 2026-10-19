@@ -175,8 +175,8 @@ export default function VerifyDocument() {
               </h3>
               <p className="text-gray-600 mb-6">
                 {isValid
-                  ? 'El documento tiene una firma post-cuantica valida y no ha sido modificado.'
-                  : 'No se pudo verificar la firma del documento o ha sido alterado.'}
+                  ? 'El documento tiene una firma post-cuantica valida, emitida por QuantumGuard, y no ha sido modificado.'
+                  : result.reason || 'No se pudo verificar la firma del documento o ha sido alterado.'}
               </p>
 
               {/* Verification Details */}
@@ -192,6 +192,35 @@ export default function VerifyDocument() {
                       {selectedFile?.name}
                     </span>
                   </div>
+                  {isValid && result.signer?.name && (
+                    <div className="flex items-start justify-between">
+                      <span className="text-gray-500">Firmante:</span>
+                      <span className="font-medium text-gray-900 text-right">
+                        {result.signer.name}
+                        {result.signer.email && (
+                          <span className="block text-xs text-gray-500">{result.signer.email}</span>
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  {result.signed_at && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-500">Firmado:</span>
+                      <span className="font-medium text-gray-900">
+                        {new Date(result.signed_at).toLocaleString('es-ES')}
+                      </span>
+                    </div>
+                  )}
+                  {isValid && result.verification_method && result.verification_method !== 'none' && (
+                    <div className="flex items-start justify-between">
+                      <span className="text-gray-500">Confianza:</span>
+                      <span className="font-medium text-gray-900 text-right max-w-[220px]">
+                        {result.verification_method === 'certificate_chain'
+                          ? 'Certificado emitido por la CA de QuantumGuard'
+                          : 'Firma registrada en QuantumGuard'}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="text-gray-500">Algoritmo:</span>
                     <span className="font-medium text-quantum-600">

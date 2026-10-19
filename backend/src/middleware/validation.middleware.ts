@@ -4,6 +4,7 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
+import { SUPPORTED_ALGORITHMS, canonicalAlgorithm } from '../utils/signature.utils';
 
 /**
  * Validate required fields in request body
@@ -97,19 +98,10 @@ export const validateUUID = (paramName: string) => {
 export const validateAlgorithm = (req: Request, res: Response, next: NextFunction): void => {
   const { algorithm } = req.body;
 
-  const validAlgorithms = [
-    'Dilithium2',
-    'Dilithium3',
-    'Dilithium5',
-    'ML-DSA-44',
-    'ML-DSA-65',
-    'ML-DSA-87',
-  ];
-
-  if (algorithm && !validAlgorithms.includes(algorithm)) {
+  if (algorithm && !canonicalAlgorithm(algorithm)) {
     res.status(400).json({
       error: 'Bad Request',
-      message: `Invalid algorithm. Supported: ${validAlgorithms.join(', ')}`,
+      message: `Invalid algorithm. Supported: ${SUPPORTED_ALGORITHMS.join(', ')}`,
     });
     return;
   }

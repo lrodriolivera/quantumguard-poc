@@ -28,6 +28,10 @@ class App {
   }
 
   private config(): void {
+    // The API is only reachable through the nginx frontend, which overwrites
+    // X-Forwarded-For with the real client IP; trust exactly that one hop.
+    this.app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS ?? 1));
+
     // Security middleware
     this.app.use(helmet());
     this.app.use(cors({

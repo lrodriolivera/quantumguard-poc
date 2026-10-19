@@ -6,6 +6,7 @@
 import { Request, Response, NextFunction } from 'express';
 
 interface RateLimitConfig {
+  name: string; // Isolates this limiter's counters from the others
   windowMs: number; // Time window in milliseconds
   maxRequests: number; // Max requests per window
   message?: string;
@@ -32,28 +33,25 @@ setInterval(() => {
 }, 60000); // Clean up every minute
 
 /**
- * Get client identifier (IP address or user ID)
+ * Get client identifier (user ID if authenticated, otherwise client IP).
+ * req.ip honours Express' "trust proxy" setting (see app.ts), so a client
+ * cannot pick its own identity through X-Forwarded-For.
  */
 const getClientId = (req: Request): string => {
-  // Use user ID if authenticated, otherwise use IP
   if (req.userId) {
     return `user:${req.userId}`;
   }
-  const forwarded = req.headers['x-forwarded-for'];
-  const ip = forwarded
-    ? (Array.isArray(forwarded) ? forwarded[0] : forwarded.split(',')[0])
-    : req.ip || req.socket.remoteAddress || 'unknown';
-  return `ip:${ip}`;
+  return `ip:${req.ip || req.socket.remoteAddress || 'unknown'}`;
 };
 
 /**
  * Create rate limiter middleware
  */
 export const rateLimit = (config: RateLimitConfig) => {
-  const { windowMs, maxRequests, message = 'Too many requests, please try again later' } = config;
+  const { name, windowMs, maxRequests, message = 'Too many requests, please try again later' } = config;
 
   return (req: Request, res: Response, next: NextFunction): void => {
-    const clientId = getClientId(req);
+    const clientId = `${name}:${getClientId(req)}`;
     const now = Date.now();
 
     let entry = rateLimitStore.get(clientId);
@@ -95,12 +93,14 @@ export const rateLimit = (config: RateLimitConfig) => {
 
 // General API rate limit: 100 requests per minute
 export const generalLimiter = rateLimit({
+  name: 'general',
   windowMs: 60 * 1000,
   maxRequests: 100,
 });
 
 // Auth endpoints: 10 requests per minute (prevent brute force)
 export const authLimiter = rateLimit({
+  name: 'auth',
   windowMs: 60 * 1000,
   maxRequests: 10,
   message: 'Too many authentication attempts, please try again later',
@@ -108,6 +108,7 @@ export const authLimiter = rateLimit({
 
 // Document signing: 20 requests per minute (resource intensive)
 export const signLimiter = rateLimit({
+  name: 'sign',
   windowMs: 60 * 1000,
   maxRequests: 20,
   message: 'Too many signing requests, please try again later',
@@ -115,6 +116,7 @@ export const signLimiter = rateLimit({
 
 // Upload rate limit: 30 uploads per minute
 export const uploadLimiter = rateLimit({
+  name: 'upload',
   windowMs: 60 * 1000,
   maxRequests: 30,
   message: 'Too many upload requests, please try again later',
@@ -122,7 +124,16 @@ export const uploadLimiter = rateLimit({
 
 // Strict rate limit for sensitive operations: 5 requests per minute
 export const strictLimiter = rateLimit({
+  name: 'strict',
   windowMs: 60 * 1000,
   maxRequests: 5,
   message: 'Rate limit exceeded for sensitive operation',
+});
+
+// Public verification endpoint: 30 requests per minute per client
+export const verifyLimiter = rateLimit({
+  name: 'verify',
+  windowMs: 60 * 1000,
+  maxRequests: 30,
+  message: 'Too many verification requests, please try again later',
 });

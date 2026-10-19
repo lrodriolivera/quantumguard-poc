@@ -7,8 +7,12 @@ import { Router } from 'express';
 import multer from 'multer';
 import { documentsController } from '../controllers/documents.controller';
 import { authenticate } from '../middleware/auth.middleware';
+import { signLimiter, uploadLimiter, verifyLimiter } from '../middleware/rateLimit.middleware';
+import { validateUUID } from '../middleware/validation.middleware';
 
 const router = Router();
+
+router.param('id', (req, res, next) => validateUUID('id')(req, res, next));
 
 // Configure multer to store files in memory
 const storage = multer.memoryStorage();
@@ -28,12 +32,13 @@ const upload = multer({
  */
 
 // POST /api/documents/upload - Upload a document
-router.post('/upload', authenticate, upload.single('file'), (req, res) =>
+router.post('/upload', authenticate, uploadLimiter, upload.single('file'), (req, res) =>
   documentsController.uploadDocument(req, res)
 );
 
-// POST /api/documents/:id/sign - Sign a document with quantum-safe cryptography
-router.post('/:id/sign', authenticate, upload.single('file'), (req, res) =>
+// POST /api/documents/:id/sign - Sign the stored document (multipart kept for the
+// algorithm field and older clients that still attach the file, which is ignored)
+router.post('/:id/sign', authenticate, signLimiter, upload.single('file'), (req, res) =>
   documentsController.signDocument(req, res)
 );
 
@@ -59,7 +64,7 @@ router.delete('/:id', authenticate, (req, res) =>
  */
 
 // POST /api/documents/verify - Verify a document signature
-router.post('/verify', upload.single('file'), (req, res) =>
+router.post('/verify', verifyLimiter, upload.single('file'), (req, res) =>
   documentsController.verifySignature(req, res)
 );
 

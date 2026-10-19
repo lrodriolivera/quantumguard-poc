@@ -39,6 +39,9 @@ async function verifyBundleBytes(
     );
   }
 
+  const certFile = zip.files['signer_certificate.pem'];
+  const signerCertificate = certFile ? await certFile.async('string') : null;
+
   const originalBlob = await zip.files[originalName].async('blob');
   const originalFileName = originalName.slice('original_'.length);
   const file = new File([originalBlob], originalFileName, {
@@ -50,6 +53,9 @@ async function verifyBundleBytes(
   formData.append('signature', sig.signature_data);
   formData.append('publicKey', sig.public_key);
   formData.append('algorithm', sig.algorithm || 'ML-DSA-44');
+  if (signerCertificate) {
+    formData.append('certificate', signerCertificate);
+  }
 
   const response = await api.post<VerificationResult>(
     '/documents/verify',
@@ -91,11 +97,6 @@ export const documentService = {
       },
     });
     return response.data;
-  },
-
-  async verifyDocument(documentId: string): Promise<VerificationResult> {
-    const blob = await this.downloadDocument(documentId);
-    return verifyBundleBytes(await blob.arrayBuffer());
   },
 
   async verifyUploadedDocument(file: File): Promise<VerificationResult> {

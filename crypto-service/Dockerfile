@@ -57,8 +57,9 @@ RUN /opt/openssl/bin/openssl version && \
 # Set working directory
 WORKDIR /app
 
-# Create PKI directory for CA certificates
-RUN mkdir -p /app/pki
+# Unprivileged runtime user; /app/pki must be a persistent volume in production
+RUN useradd --system --uid 10001 --home-dir /app --shell /usr/sbin/nologin qg && \
+    mkdir -p /app/pki && chown qg:qg /app/pki && chmod 700 /app/pki
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
@@ -81,6 +82,9 @@ RUN ldconfig && \
 
 # Copy application code
 COPY . .
+
+USER qg
+VOLUME ["/app/pki"]
 
 # Expose port
 EXPOSE 8001

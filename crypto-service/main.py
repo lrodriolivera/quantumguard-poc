@@ -12,7 +12,8 @@ import hashlib
 import base64
 import json
 import uuid
-from datetime import datetime, timedelta
+import binascii
+from datetime import datetime, timezone
 import logging
 
 # Configure logging
@@ -39,8 +40,8 @@ app = FastAPI(
     - Quantum-safe digital signatures (ML-DSA + SLH-DSA)
     - Quantum-safe key encapsulation (ML-KEM)
     - NIST FIPS 203/204/205 certified algorithms
-    - 50-year validity period
-    - SHA-3-256 document hashing
+    - X.509 certificates (RFC 9881 / RFC 9909) and CMS SignedData (RFC 9882 / RFC 9814)
+    - SHA-3-256 document fingerprints
     """,
     version="2.0.0",
     contact={
@@ -65,6 +66,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class InputError(ValueError):
+    """Invalid client input; surfaced as HTTP 400."""
+
+
+@app.exception_handler(InputError)
+async def input_error_handler(request, exc: InputError):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def decode_b64(value: str, field: str) -> bytes:
+    try:
+        return base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError):
+        raise InputError(f"{field} is not valid base64")
+
+
+def parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise InputError("signed_at must be an ISO-8601 timestamp")
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
 # ============================================================
 # Pydantic Models - Signatures
 # ============================================================
@@ -83,7 +114,7 @@ class SignatureResponse(BaseModel):
     public_key: str
     algorithm: str
     timestamp: str
-    valid_until: str
+    valid_until: Optional[str] = None
     quantum_safe: bool
     signature_size: int
 
@@ -170,12 +201,12 @@ class QuantumCryptoService:
             'ML-DSA-65': {
                 'family': 'ML-DSA', 'standard': 'FIPS 204',
                 'security_level': 3, 'type': 'lattice',
-                'signature_size': 3293, 'public_key_size': 1952,
+                'signature_size': 3309, 'public_key_size': 1952,
             },
             'ML-DSA-87': {
                 'family': 'ML-DSA', 'standard': 'FIPS 204',
                 'security_level': 5, 'type': 'lattice',
-                'signature_size': 4595, 'public_key_size': 2592,
+                'signature_size': 4627, 'public_key_size': 2592,
             },
             'SLH-DSA-SHA2-128s': {
                 'family': 'SLH-DSA', 'standard': 'FIPS 205',
@@ -208,11 +239,35 @@ class QuantumCryptoService:
         canonical = self._alias_map.get(algorithm, algorithm)
         return self.algorithm_metadata.get(canonical, {})
 
+    def canonical(self, algorithm: str) -> str:
+        if algorithm not in self.supported_algorithms:
+            raise InputError(f"Unsupported algorithm: {algorithm}")
+        return self._alias_map.get(algorithm, algorithm)
+
+    def verify_raw(self, document_bytes: bytes, signature_bytes: bytes,
+                   public_key_bytes: bytes, algorithm: str) -> bool:
+        """liboqs verification with strict size checks (pure mode, empty context)."""
+        with oqs.Signature(self.supported_algorithms[algorithm]) as verifier:
+            if len(public_key_bytes) != verifier.details['length_public_key']:
+                raise InputError(f"Public key size does not match {algorithm}")
+            if len(signature_bytes) > verifier.details['length_signature']:
+                return False
+            return verifier.verify(document_bytes, signature_bytes, public_key_bytes)
+
+    def verification_details(self, algorithm: str) -> Dict[str, str]:
+        meta = self.get_metadata(algorithm)
+        return {
+            'algorithm_family': meta.get('family', 'Unknown'),
+            'nist_standard': meta.get('standard', 'Unknown'),
+            'security_level': f"NIST Level {meta.get('security_level', '?')}",
+            'algorithm_type': meta.get('type', 'unknown'),
+        }
+
     def generate_keypair(self, algorithm: str = 'Dilithium2') -> KeypairResponse:
         """Generate a new quantum-safe keypair"""
+        if algorithm not in self.supported_algorithms:
+            raise InputError(f"Unsupported algorithm: {algorithm}")
         try:
-            if algorithm not in self.supported_algorithms:
-                raise ValueError(f"Unsupported algorithm: {algorithm}")
 
             oqs_algorithm = self.supported_algorithms[algorithm]
             signer = oqs.Signature(oqs_algorithm)
@@ -221,11 +276,13 @@ class QuantumCryptoService:
             return KeypairResponse(
                 public_key=base64.b64encode(public_key).decode(),
                 algorithm=algorithm,
-                created_at=datetime.now().isoformat(),
+                created_at=utc_now_iso(),
                 quantum_safe=True,
                 key_size=len(public_key)
             )
 
+        except InputError:
+            raise
         except Exception as e:
             logger.error(f"Keypair generation failed: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Keypair generation failed: {str(e)}")
@@ -237,9 +294,9 @@ class QuantumCryptoService:
         metadata: Optional[Dict[str, Any]] = None
     ) -> SignatureResponse:
         """Sign a document with quantum-safe cryptography"""
+        if algorithm not in self.supported_algorithms:
+            raise InputError(f"Unsupported algorithm: {algorithm}")
         try:
-            if algorithm not in self.supported_algorithms:
-                raise ValueError(f"Unsupported algorithm: {algorithm}")
 
             # Calculate document hash using SHA-3-256 (quantum-resistant)
             document_hash = hashlib.sha3_256(document_bytes).hexdigest()
@@ -249,14 +306,14 @@ class QuantumCryptoService:
             public_key = signer.generate_keypair()
             signature_bytes = signer.sign(document_bytes)
 
+            # Ephemeral demo key: not certified, so it carries no validity period.
             result = SignatureResponse(
                 signature_id=str(uuid.uuid4()),
                 document_hash=document_hash,
                 signature=base64.b64encode(signature_bytes).decode(),
                 public_key=base64.b64encode(public_key).decode(),
-                algorithm=algorithm,
-                timestamp=datetime.now().isoformat(),
-                valid_until=(datetime.now() + timedelta(days=365*50)).isoformat(),
+                algorithm=self._alias_map.get(algorithm, algorithm),
+                timestamp=utc_now_iso(),
                 quantum_safe=True,
                 signature_size=len(signature_bytes)
             )
@@ -264,6 +321,8 @@ class QuantumCryptoService:
             logger.info(f"Document signed with {algorithm}. Hash: {document_hash[:16]}... Size: {len(signature_bytes)} bytes")
             return result
 
+        except InputError:
+            raise
         except Exception as e:
             logger.error(f"Document signing failed: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Document signing failed: {str(e)}")
@@ -275,39 +334,24 @@ class QuantumCryptoService:
         public_key: str,
         algorithm: str = 'Dilithium2'
     ) -> VerificationResponse:
-        """Verify a quantum-safe signature"""
-        try:
-            if algorithm not in self.supported_algorithms:
-                raise ValueError(f"Unsupported algorithm: {algorithm}")
+        """Verify a signature against a caller-supplied raw public key.
 
-            signature_bytes = base64.b64decode(signature)
-            public_key_bytes = base64.b64decode(public_key)
-
-            oqs_algorithm = self.supported_algorithms[algorithm]
-            verifier = oqs.Signature(oqs_algorithm)
-            is_valid = verifier.verify(document_bytes, signature_bytes, public_key_bytes)
-
-            document_hash = hashlib.sha3_256(document_bytes).hexdigest()
-            meta = self.get_metadata(algorithm)
-
-            return VerificationResponse(
-                valid=is_valid,
-                document_hash=document_hash,
-                algorithm=algorithm,
-                verification_timestamp=datetime.now().isoformat(),
-                quantum_safe=True,
-                details={
-                    'algorithm_family': meta.get('family', 'Unknown'),
-                    'nist_standard': meta.get('standard', 'Unknown'),
-                    'security_level': f"NIST Level {meta.get('security_level', '?')}",
-                    'algorithm_type': meta.get('type', 'unknown'),
-                    'estimated_security_until': '2075+',
-                }
-            )
-
-        except Exception as e:
-            logger.error(f"Signature verification failed: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Signature verification failed: {str(e)}")
+        This only proves the key matches the signature; callers must establish
+        that the key itself is trusted (certificate chain or registry lookup).
+        """
+        canonical = self.canonical(algorithm)
+        is_valid = self.verify_raw(
+            document_bytes, decode_b64(signature, 'signature'),
+            decode_b64(public_key, 'public_key'), algorithm,
+        )
+        return VerificationResponse(
+            valid=is_valid,
+            document_hash=hashlib.sha3_256(document_bytes).hexdigest(),
+            algorithm=canonical,
+            verification_timestamp=utc_now_iso(),
+            quantum_safe=True,
+            details=self.verification_details(canonical),
+        )
 
 # ============================================================
 # Quantum KEM Service - Key Encapsulation (ML-KEM / Kyber)
@@ -359,9 +403,9 @@ class QuantumKEMService:
 
     def generate_keypair(self, algorithm: str = 'ML-KEM-768') -> KEMKeypairResponse:
         """Generate a new KEM keypair"""
+        if algorithm not in self.supported_algorithms:
+            raise InputError(f"Unsupported KEM algorithm: {algorithm}")
         try:
-            if algorithm not in self.supported_algorithms:
-                raise ValueError(f"Unsupported KEM algorithm: {algorithm}")
 
             oqs_alg = self.supported_algorithms[algorithm]
             kem = oqs.KeyEncapsulation(oqs_alg)
@@ -374,23 +418,25 @@ class QuantumKEMService:
                 algorithm=algorithm,
                 public_key_size=len(public_key),
                 secret_key_size=len(secret_key),
-                created_at=datetime.now().isoformat(),
+                created_at=utc_now_iso(),
                 quantum_safe=True,
             )
 
+        except InputError:
+            raise
         except Exception as e:
             logger.error(f"KEM keypair generation failed: {str(e)}")
             raise HTTPException(status_code=500, detail=f"KEM keypair generation failed: {str(e)}")
 
     def encapsulate(self, public_key: str, algorithm: str = 'ML-KEM-768') -> EncapsulationResponse:
         """Encapsulate: generate shared secret + ciphertext from public key"""
+        if algorithm not in self.supported_algorithms:
+            raise InputError(f"Unsupported KEM algorithm: {algorithm}")
         try:
-            if algorithm not in self.supported_algorithms:
-                raise ValueError(f"Unsupported KEM algorithm: {algorithm}")
 
             oqs_alg = self.supported_algorithms[algorithm]
             kem = oqs.KeyEncapsulation(oqs_alg)
-            pk_bytes = base64.b64decode(public_key)
+            pk_bytes = decode_b64(public_key, 'public_key')
             ciphertext, shared_secret = kem.encap_secret(pk_bytes)
 
             return EncapsulationResponse(
@@ -399,34 +445,38 @@ class QuantumKEMService:
                 algorithm=algorithm,
                 ciphertext_size=len(ciphertext),
                 shared_secret_size=len(shared_secret),
-                timestamp=datetime.now().isoformat(),
+                timestamp=utc_now_iso(),
                 quantum_safe=True,
             )
 
+        except InputError:
+            raise
         except Exception as e:
             logger.error(f"KEM encapsulation failed: {str(e)}")
             raise HTTPException(status_code=500, detail=f"KEM encapsulation failed: {str(e)}")
 
     def decapsulate(self, ciphertext: str, secret_key: str, algorithm: str = 'ML-KEM-768') -> DecapsulationResponse:
         """Decapsulate: recover shared secret from ciphertext + secret key"""
+        if algorithm not in self.supported_algorithms:
+            raise InputError(f"Unsupported KEM algorithm: {algorithm}")
         try:
-            if algorithm not in self.supported_algorithms:
-                raise ValueError(f"Unsupported KEM algorithm: {algorithm}")
 
             oqs_alg = self.supported_algorithms[algorithm]
-            sk_bytes = base64.b64decode(secret_key)
+            sk_bytes = decode_b64(secret_key, 'secret_key')
             kem = oqs.KeyEncapsulation(oqs_alg, secret_key=sk_bytes)
-            ct_bytes = base64.b64decode(ciphertext)
+            ct_bytes = decode_b64(ciphertext, 'ciphertext')
             shared_secret = kem.decap_secret(ct_bytes)
 
             return DecapsulationResponse(
                 shared_secret=base64.b64encode(shared_secret).decode(),
                 algorithm=algorithm,
                 shared_secret_size=len(shared_secret),
-                timestamp=datetime.now().isoformat(),
+                timestamp=utc_now_iso(),
                 quantum_safe=True,
             )
 
+        except InputError:
+            raise
         except Exception as e:
             logger.error(f"KEM decapsulation failed: {str(e)}")
             raise HTTPException(status_code=500, detail=f"KEM decapsulation failed: {str(e)}")
@@ -459,7 +509,7 @@ async def health_check():
     """Health check endpoint"""
     return {
         "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": utc_now_iso(),
         "service": "crypto-service",
     }
 
@@ -489,6 +539,8 @@ async def sign_document(
         return crypto_service.sign_document(document_bytes, algorithm, metadata_dict)
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid metadata JSON")
+    except (InputError, HTTPException):
+        raise
     except Exception as e:
         logger.error(f"Error in sign_document endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -506,6 +558,8 @@ async def verify_signature(
     try:
         document_bytes = await file.read()
         return crypto_service.verify_signature(document_bytes, signature, public_key, algorithm)
+    except (InputError, HTTPException):
+        raise
     except Exception as e:
         logger.error(f"Error in verify_signature endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -601,17 +655,28 @@ import pdf_seal
 
 @app.on_event("startup")
 async def startup_pki():
-    """Initialize the PKI Certificate Authority on startup"""
+    """Load the PKI CA. A missing CA only gets created when PKI_AUTO_INIT_CA allows it."""
+    allow_create = os.environ.get("PKI_AUTO_INIT_CA", "true").lower() == "true"
     try:
-        openssl_ver = pki_module.get_openssl_version()
-        logger.info(f"PKI: {openssl_ver}")
-        ca_info = pki_module.init_ca(algorithm="ML-DSA-65")
-        if ca_info.get("initialized"):
-            logger.info("PKI: Certificate Authority ready")
-        else:
-            logger.warning("PKI: CA initialization returned unexpected state")
+        logger.info(f"PKI: {pki_module.get_openssl_version()}")
+        pki_module.init_ca(algorithm="ML-DSA-65", allow_create=allow_create)
+        logger.info("PKI: Certificate Authority ready")
     except Exception as e:
-        logger.warning(f"PKI: Could not initialize CA (OpenSSL 3.5 may not be available): {e}")
+        logger.error(f"PKI: Certificate Authority unavailable, signing disabled: {e}")
+
+
+def _certificate_summary(info: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "subject": info["subject"],
+        "issuer": info["issuer"],
+        "serial": info["serial"],
+        "common_name": info["common_name"],
+        "email": info["email"],
+        "not_before": info["not_before"].isoformat(),
+        "not_after": info["not_after"].isoformat(),
+        "algorithm": info["algorithm"],
+    }
+
 
 @app.post("/crypto/sign-x509",
           summary="Sign Document with X.509 Certificate + CMS",
@@ -619,52 +684,114 @@ async def startup_pki():
 async def sign_document_x509(
     file: UploadFile = File(..., description="Document file to sign"),
     algorithm: str = Form(default='ML-DSA-44', description="Signature algorithm"),
+    signer_name: Optional[str] = Form(default=None, description="Signer display name (certificate CN)"),
+    signer_email: Optional[str] = Form(default=None, description="Signer email (certificate SAN)"),
 ):
     """
-    Sign a document and generate RFC-compliant PKI artifacts:
-    - liboqs quantum signature (fast)
-    - X.509 end-entity certificate (RFC 9881)
-    - CMS SignedData detached signature (RFC 9882)
-    - CA certificate for verification
+    Sign a document with a CA-certified key bound to the signer's identity.
+
+    One key produces every artifact: the raw detached signature (pure ML-DSA /
+    SLH-DSA, FIPS 204/205), the CMS SignedData (RFC 9882 / RFC 9814) and the
+    X.509 certificate (RFC 9881 / RFC 9909). The raw signature is cross-checked
+    with liboqs before returning.
     """
+    canonical = crypto_service.canonical(algorithm)
+    document_bytes = await file.read()
     try:
-        document_bytes = await file.read()
-
-        # 1. Fast signature via liboqs (existing flow)
-        liboqs_result = crypto_service.sign_document(document_bytes, algorithm)
-
-        # 2. PKI artifacts via OpenSSL 3.5
         pki_result = pki_module.sign_document_full(
             document_bytes=document_bytes,
-            algorithm=algorithm,
+            algorithm=canonical,
+            signer_name=signer_name,
+            signer_email=signer_email,
         )
-
-        return {
-            # liboqs signature data
-            "signature_id": liboqs_result.signature_id,
-            "document_hash": liboqs_result.document_hash,
-            "signature": liboqs_result.signature,
-            "public_key": liboqs_result.public_key,
-            "algorithm": liboqs_result.algorithm,
-            "timestamp": liboqs_result.timestamp,
-            "valid_until": liboqs_result.valid_until,
-            "quantum_safe": True,
-            "signature_size": liboqs_result.signature_size,
-            # PKI artifacts
-            "pki": {
-                "signer_cert_pem": pki_result["signer_cert_pem"],
-                "ca_cert_pem": pki_result["ca_cert_pem"],
-                "cms_signature_b64": pki_result["cms_signature_b64"],
-                "cms_size": pki_result["cms_size"],
-                "oid": pki_result["oid"],
-                "verified": pki_result["verified"],
-                "standards": ["RFC 9881 (ML-DSA in X.509)", "RFC 9882 (ML-DSA in CMS)"],
-            },
-        }
-
-    except Exception as e:
-        logger.error(f"Error in sign_document_x509: {str(e)}")
+        if not crypto_service.verify_raw(
+            document_bytes, pki_result["signature_raw"], pki_result["public_key_raw"], canonical,
+        ):
+            raise pki_module.PKIError("Self-check failed: liboqs rejected the OpenSSL signature")
+    except pki_module.PKIError as e:
+        logger.error(f"Error in sign_document_x509: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+    cert = pki_result["certificate"]
+    return {
+        "signature_id": str(uuid.uuid4()),
+        "document_hash": hashlib.sha3_256(document_bytes).hexdigest(),
+        "signature": pki_module.b64(pki_result["signature_raw"]),
+        "public_key": pki_module.b64(pki_result["public_key_raw"]),
+        "algorithm": canonical,
+        "timestamp": utc_now_iso(),
+        "valid_until": cert["not_after"].isoformat(),
+        "quantum_safe": True,
+        "signature_size": len(pki_result["signature_raw"]),
+        "pki": {
+            "signer_cert_pem": pki_result["signer_cert_pem"],
+            "ca_cert_pem": pki_result["ca_cert_pem"],
+            "cms_signature_b64": pki_module.b64(pki_result["cms_der"]),
+            "cms_size": len(pki_result["cms_der"]),
+            "cms_digest": pki_result["cms_digest"],
+            "oid": pki_result["oid"],
+            "certificate": _certificate_summary(cert),
+            "verified": True,
+            "standards": (
+                ["RFC 9909 (SLH-DSA in X.509)", "RFC 9814 (SLH-DSA in CMS)"]
+                if canonical.startswith("SLH-DSA")
+                else ["RFC 9881 (ML-DSA in X.509)", "RFC 9882 (ML-DSA in CMS)"]
+            ),
+        },
+    }
+
+
+@app.post("/crypto/verify-x509",
+          summary="Verify Signature against a QuantumGuard Certificate",
+          tags=["PKI (X.509)"])
+async def verify_signature_x509(
+    file: UploadFile = File(..., description="Original document file"),
+    signature: str = Form(..., description="Base64-encoded raw signature"),
+    certificate: str = Form(..., description="Signer certificate (PEM)"),
+    signed_at: Optional[str] = Form(default=None, description="Trusted signing time (ISO-8601), if known"),
+):
+    """
+    Verify a signature using only the key inside the signer certificate, and
+    require that certificate to chain to the QuantumGuard CA. The algorithm is
+    taken from the certificate, never from the caller.
+    """
+    document_bytes = await file.read()
+    signature_bytes = decode_b64(signature, "signature")
+    at_time = parse_iso_datetime(signed_at)
+    try:
+        info = pki_module.certificate_info(certificate)
+    except pki_module.CertificateError as e:
+        raise InputError(str(e))
+
+    algorithm = info["algorithm"]
+    if algorithm not in crypto_service.supported_algorithms:
+        raise InputError(f"Certificate algorithm {algorithm} is not supported")
+
+    try:
+        chain_valid = not info["is_ca"] and pki_module.verify_certificate_chain(certificate)
+    except pki_module.PKIError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    signature_valid = crypto_service.verify_raw(
+        document_bytes, signature_bytes, info["public_key_raw"], algorithm,
+    )
+    within_validity = (
+        info["not_before"] <= at_time <= info["not_after"] if at_time else None
+    )
+    valid = signature_valid and chain_valid and within_validity is not False
+
+    return {
+        "valid": valid,
+        "signature_valid": signature_valid,
+        "chain_valid": chain_valid,
+        "within_validity": within_validity,
+        "document_hash": hashlib.sha3_256(document_bytes).hexdigest(),
+        "algorithm": algorithm,
+        "verification_timestamp": utc_now_iso(),
+        "quantum_safe": True,
+        "details": crypto_service.verification_details(algorithm),
+        "certificate": _certificate_summary(info),
+    }
+
 
 @app.post("/crypto/verify-cms",
           summary="Verify CMS SignedData",
@@ -673,30 +800,19 @@ async def verify_cms(
     file: UploadFile = File(..., description="Original document file"),
     cms_signature: str = Form(..., description="Base64-encoded CMS SignedData (DER)"),
 ):
-    """Verify a CMS SignedData detached signature against the original document"""
+    """Verify a detached CMS SignedData against the document and the QuantumGuard CA"""
+    document_bytes = await file.read()
+    cms_der = decode_b64(cms_signature, "cms_signature")
     try:
-        document_bytes = await file.read()
-        cms_der = base64.b64decode(cms_signature)
-        ca_info = pki_module.get_ca_info()
-
-        if not ca_info.get("initialized"):
-            raise HTTPException(status_code=500, detail="PKI CA not initialized")
-
-        is_valid = pki_module.cms_verify_document(
-            document_bytes=document_bytes,
-            cms_signature_der=cms_der,
-            ca_cert_pem=ca_info["certificate_pem"],
-        )
-
-        return {
-            "valid": is_valid,
-            "verification_timestamp": datetime.now().isoformat(),
-            "method": "CMS SignedData (RFC 9882)",
-        }
-
-    except Exception as e:
-        logger.error(f"Error in verify_cms: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        is_valid = pki_module.cms_verify_document(document_bytes, cms_der)
+    except pki_module.PKIError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    return {
+        "valid": is_valid,
+        "document_hash": hashlib.sha3_256(document_bytes).hexdigest(),
+        "verification_timestamp": utc_now_iso(),
+        "method": "CMS SignedData (RFC 9882 / RFC 9814)",
+    }
 
 @app.get("/crypto/pki/ca",
          summary="Get CA Certificate",

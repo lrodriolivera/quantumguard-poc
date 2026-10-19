@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { documentService } from '../services/document.service';
-import type { Document, DocumentStats, VerificationResult } from '../types';
+import type { Document, DocumentStats } from '../types';
 
 interface UseDocumentsReturn {
   documents: Document[];
@@ -18,7 +18,6 @@ interface UseDocumentsReturn {
   fetchStats: () => Promise<void>;
   uploadDocument: (file: File) => Promise<Document>;
   signDocument: (documentId: string, file: File, algorithm?: string) => Promise<any>;
-  verifyDocument: (documentId: string) => Promise<VerificationResult>;
   deleteDocument: (documentId: string) => Promise<void>;
   clearError: () => void;
 }
@@ -114,24 +113,6 @@ export function useDocuments(): UseDocumentsReturn {
     []
   );
 
-  const verifyDocument = useCallback(
-    async (documentId: string): Promise<VerificationResult> => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const response = await documentService.verifyDocument(documentId);
-        return response;
-      } catch (err: any) {
-        const message = err?.response?.data?.message || err?.message || 'Error al verificar documento';
-        setError(message);
-        throw new Error(message);
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    []
-  );
-
   const deleteDocument = useCallback(async (documentId: string): Promise<void> => {
     setIsLoading(true);
     setError(null);
@@ -163,7 +144,6 @@ export function useDocuments(): UseDocumentsReturn {
     fetchStats,
     uploadDocument,
     signDocument,
-    verifyDocument,
     deleteDocument,
     clearError,
   };

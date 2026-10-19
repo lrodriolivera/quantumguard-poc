@@ -88,6 +88,19 @@ export interface VerificationResult {
   verification_timestamp: string;
   quantum_safe: boolean;
   details: Record<string, string>;
+  trusted?: boolean;
+  verification_method?: 'certificate_chain' | 'registry' | 'none';
+  reason?: string;
+  signed_at?: string;
+  signer?: { name: string | null; email: string | null };
+  certificate?: {
+    subject: string;
+    issuer: string;
+    serial: string;
+    not_before: string;
+    not_after: string;
+    algorithm: string;
+  };
 }
 
 // Stats types

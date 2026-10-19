@@ -19,19 +19,19 @@ interface KeypairResponse {
   key_size: number;
 }
 
-interface SignatureResponse {
+export interface SignatureResponse {
   signature_id: string;
   document_hash: string;
   signature: string;
   public_key: string;
   algorithm: string;
   timestamp: string;
-  valid_until: string;
+  valid_until?: string;
   quantum_safe: boolean;
   signature_size: number;
 }
 
-interface VerificationResponse {
+export interface VerificationResponse {
   valid: boolean;
   document_hash: string;
   algorithm: string;
@@ -40,6 +40,38 @@ interface VerificationResponse {
   details: {
     [key: string]: string;
   };
+}
+
+export interface CertificateSummary {
+  subject: string;
+  issuer: string;
+  serial: string;
+  common_name: string | null;
+  email: string | null;
+  not_before: string;
+  not_after: string;
+  algorithm: string;
+}
+
+export interface X509SignatureResponse extends SignatureResponse {
+  pki: {
+    signer_cert_pem: string;
+    ca_cert_pem: string;
+    cms_signature_b64: string;
+    cms_size: number;
+    cms_digest: string;
+    oid: string;
+    certificate: CertificateSummary;
+    verified: boolean;
+    standards: string[];
+  };
+}
+
+export interface X509VerificationResponse extends VerificationResponse {
+  signature_valid: boolean;
+  chain_valid: boolean;
+  within_validity: boolean | null;
+  certificate: CertificateSummary;
 }
 
 interface KEMKeypairResponse {
@@ -69,6 +101,9 @@ interface DecapsulationResponse {
   timestamp: string;
   quantum_safe: boolean;
 }
+
+/** The crypto-service rejected the input (HTTP 4xx); safe to report as 400. */
+export class CryptoInputError extends Error {}
 
 export class CryptoService {
   private client: AxiosInstance;
@@ -143,6 +178,11 @@ export class CryptoService {
       }
     }
 
+    const status = (lastError as AxiosError | null)?.response?.status;
+    if (status && status >= 400 && status < 500) {
+      const detail = ((lastError as AxiosError).response?.data as { detail?: string })?.detail;
+      throw new CryptoInputError(detail || `${operationName} rejected the request`);
+    }
     throw lastError || new Error(`${operationName} failed after ${MAX_RETRIES} attempts`);
   }
 
@@ -198,35 +238,6 @@ export class CryptoService {
   }
 
   /**
-   * Sign a document with quantum-safe cryptography
-   */
-  async signDocument(
-    fileBuffer: Buffer,
-    filename: string,
-    algorithm: string = 'Dilithium2',
-    metadata?: any
-  ): Promise<SignatureResponse> {
-    return this.withRetry(async () => {
-      const formData = new FormData();
-      formData.append('file', fileBuffer, { filename });
-      formData.append('algorithm', algorithm);
-
-      if (metadata) {
-        formData.append('metadata', JSON.stringify(metadata));
-      }
-
-      const response = await this.client.post('/crypto/sign', formData, {
-        headers: formData.getHeaders(),
-        maxBodyLength: Infinity,
-        maxContentLength: Infinity,
-      });
-
-      console.log(`✅ Document signed: ${filename} with ${algorithm}`);
-      return response.data;
-    }, 'signDocument');
-  }
-
-  /**
    * Verify a quantum-safe signature
    */
   async verifySignature(
@@ -255,27 +266,65 @@ export class CryptoService {
   }
 
   /**
-   * Sign a document with X.509 certificate + CMS SignedData (RFC 9881/9882)
+   * Sign a document with a CA-certified key bound to the signer identity
+   * (X.509 RFC 9881/9909 + CMS RFC 9882/9814)
    */
   async signDocumentX509(
     fileBuffer: Buffer,
     filename: string,
-    algorithm: string = 'ML-DSA-44',
-  ): Promise<any> {
+    algorithm: string,
+    signer: { name: string; email: string },
+  ): Promise<X509SignatureResponse> {
     return this.withRetry(async () => {
       const formData = new FormData();
       formData.append('file', fileBuffer, { filename });
       formData.append('algorithm', algorithm);
+      formData.append('signer_name', signer.name);
+      formData.append('signer_email', signer.email);
 
       const response = await this.client.post('/crypto/sign-x509', formData, {
         headers: formData.getHeaders(),
         maxBodyLength: Infinity,
         maxContentLength: Infinity,
       });
-
-      console.log(`✅ Document signed with X.509: ${filename} with ${algorithm}`);
       return response.data;
     }, 'signDocumentX509');
+  }
+
+  /**
+   * Verify a signature with the key inside a certificate that must chain to our CA
+   */
+  async verifySignatureX509(
+    fileBuffer: Buffer,
+    filename: string,
+    signature: string,
+    certificatePem: string,
+    signedAt?: Date,
+  ): Promise<X509VerificationResponse> {
+    return this.withRetry(async () => {
+      const formData = new FormData();
+      formData.append('file', fileBuffer, { filename });
+      formData.append('signature', signature);
+      formData.append('certificate', certificatePem);
+      if (signedAt) {
+        formData.append('signed_at', signedAt.toISOString());
+      }
+
+      const response = await this.client.post('/crypto/verify-x509', formData, {
+        headers: formData.getHeaders(),
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+      });
+      return response.data;
+    }, 'verifySignatureX509');
+  }
+
+  /**
+   * Get the QuantumGuard CA certificate (PEM)
+   */
+  async getCaCertificate(): Promise<string> {
+    const response = await this.client.get('/crypto/pki/ca');
+    return response.data.certificate_pem;
   }
 
   /**

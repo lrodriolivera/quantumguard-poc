@@ -7,10 +7,26 @@ import { Request, Response } from 'express';
 import { Document } from '../models/document.model';
 import { Signature } from '../models/signature.model';
 import { User } from '../models/user.model';
-import { cryptoService } from '../services/crypto.service';
+import { cryptoService, CryptoInputError } from '../services/crypto.service';
 import { storageService } from '../services/storage.service';
+import {
+  buildBundleFiles,
+  buildCertificateJson,
+  buildVerifyMarkdown,
+  isCmsSignedData,
+} from '../services/bundle.service';
+import {
+  DEFAULT_ALGORITHM,
+  SUPPORTED_ALGORITHMS,
+  buildVerificationResult,
+  canonicalAlgorithm,
+  signerIdentity,
+  x509InvalidReason,
+} from '../utils/signature.utils';
 import archiver from 'archiver';
-import crypto from 'crypto';
+
+// Newest signature first: bundles and clients use signatures[0] as "the" signature.
+const LATEST_SIGNATURE_FIRST: any = [[{ model: Signature, as: 'signatures' }, 'timestamp', 'DESC']];
 
 export class DocumentsController {
   /**
@@ -72,8 +88,11 @@ export class DocumentsController {
   }
 
   /**
-   * Sign a document with quantum-safe cryptography
+   * Sign a stored document with quantum-safe cryptography
    * POST /api/documents/:id/sign
+   *
+   * Always signs the bytes saved at upload time; any file sent with this
+   * request is ignored so the signature cannot cover different content.
    */
   async signDocument(req: Request, res: Response): Promise<void> {
     try {
@@ -86,17 +105,15 @@ export class DocumentsController {
       }
 
       const { id } = req.params;
-      const { algorithm = 'Dilithium2' } = req.body;
-
-      if (!req.file) {
+      const algorithm = canonicalAlgorithm(req.body?.algorithm || DEFAULT_ALGORITHM);
+      if (!algorithm) {
         res.status(400).json({
           error: 'Bad Request',
-          message: 'No file provided',
+          message: `Unsupported algorithm. Supported: ${SUPPORTED_ALGORITHMS.join(', ')}`,
         });
         return;
       }
 
-      // Find document
       const document = await Document.findOne({
         where: { id, user_id: req.userId },
       });
@@ -109,27 +126,36 @@ export class DocumentsController {
         return;
       }
 
-      // Sign document with crypto service (try X.509 first, fallback to basic)
-      let signatureResponse: any;
-      let pkiData: any = null;
-
-      try {
-        signatureResponse = await cryptoService.signDocumentX509(
-          req.file.buffer,
-          req.file.originalname,
-          algorithm
-        );
-        pkiData = signatureResponse.pki || null;
-      } catch {
-        // Fallback to basic signing if X.509 endpoint not available
-        signatureResponse = await cryptoService.signDocument(
-          req.file.buffer,
-          req.file.originalname,
-          algorithm
-        );
+      if (!document.original_path) {
+        res.status(409).json({
+          error: 'Conflict',
+          message: 'Document file not available for signing',
+        });
+        return;
       }
 
-      // Create signature record
+      const fileBuffer = await storageService.loadFilePath(document.original_path);
+      if (storageService.calculateHash(fileBuffer) !== document.file_hash) {
+        console.error(`Stored file integrity mismatch for document ${document.id}`);
+        res.status(500).json({
+          error: 'Internal Server Error',
+          message: 'Stored document failed its integrity check; it was not signed',
+        });
+        return;
+      }
+
+      const user = await User.findByPk(req.userId);
+      const signatureResponse = await cryptoService.signDocumentX509(
+        fileBuffer,
+        document.filename,
+        algorithm,
+        signerIdentity(user),
+      );
+
+      if (signatureResponse.document_hash !== document.file_hash) {
+        throw new Error('Crypto service signed content that differs from the stored document');
+      }
+
       const signature = await Signature.create({
         document_id: document.id,
         algorithm: signatureResponse.algorithm,
@@ -137,40 +163,49 @@ export class DocumentsController {
         signature_data: signatureResponse.signature,
         document_hash: signatureResponse.document_hash,
         timestamp: new Date(signatureResponse.timestamp),
-        valid_until: new Date(signatureResponse.valid_until),
+        valid_until: signatureResponse.valid_until ? new Date(signatureResponse.valid_until) : null,
         quantum_safe: signatureResponse.quantum_safe,
         signature_size: signatureResponse.signature_size,
-        signer_cert: pkiData?.signer_cert_pem || null,
-        cms_signature: pkiData?.cms_signature_b64 || null,
+        signer_cert: signatureResponse.pki.signer_cert_pem,
+        cms_signature: signatureResponse.pki.cms_signature_b64,
       });
 
-      // Update document status
       await document.update({ status: 'signed' });
 
-      console.log(`✅ Document signed: ${document.filename} with ${algorithm}`);
+      console.log(`✅ Document signed: ${document.id} with ${algorithm}`);
 
       res.status(200).json({
         message: 'Document signed successfully',
         document: document.toSafeJSON(),
         signature: signature.toSafeJSON(),
+        certificate: signatureResponse.pki.certificate,
       });
     } catch (error: any) {
+      if (error instanceof CryptoInputError) {
+        res.status(400).json({ error: 'Bad Request', message: error.message });
+        return;
+      }
       console.error('Sign document error:', error);
 
       res.status(500).json({
         error: 'Internal Server Error',
-        message: error.message || 'Failed to sign document',
+        message: 'Failed to sign document',
       });
     }
   }
 
   /**
-   * Verify a document signature
+   * Verify a document signature (public)
    * POST /api/documents/verify
+   *
+   * A signature is only reported valid when its key is trusted: either the
+   * supplied certificate chains to the QuantumGuard CA, or the exact
+   * signature/public-key pair exists in our signature registry. A key sent by
+   * the caller is never trusted on its own.
    */
   async verifySignature(req: Request, res: Response): Promise<void> {
     try {
-      const { signature, publicKey, algorithm = 'Dilithium2' } = req.body;
+      const { signature, publicKey, certificate } = req.body ?? {};
 
       if (!req.file) {
         res.status(400).json({
@@ -180,35 +215,66 @@ export class DocumentsController {
         return;
       }
 
-      if (!signature || !publicKey) {
+      if (!signature || (!publicKey && !certificate)) {
         res.status(400).json({
           error: 'Bad Request',
-          message: 'Signature and public key are required',
+          message: 'Signature and a certificate or public key are required',
         });
         return;
       }
 
-      // Verify signature with crypto service
-      const verificationResponse = await cryptoService.verifySignature(
-        req.file.buffer,
-        req.file.originalname,
-        signature,
-        publicKey,
-        algorithm
-      );
+      const file = req.file;
+      const record = await Signature.findOne({ where: { signature_data: signature } });
+      const registered = Boolean(record && publicKey && record.public_key === publicKey);
 
-      console.log(`✅ Signature verification: ${verificationResponse.valid ? 'VALID' : 'INVALID'}`);
+      if (certificate) {
+        const x509 = await cryptoService.verifySignatureX509(
+          file.buffer, file.originalname, signature, certificate, record?.timestamp,
+        );
+        if (x509.valid || !registered) {
+          res.status(200).json(buildVerificationResult(x509, {
+            method: 'certificate_chain',
+            signedAt: record?.timestamp,
+            reason: x509.valid ? undefined : x509InvalidReason(x509),
+          }));
+          return;
+        }
+      }
+
+      if (registered && record) {
+        const raw = await cryptoService.verifySignature(
+          file.buffer, file.originalname, signature, record.public_key, record.algorithm,
+        );
+        res.status(200).json(buildVerificationResult(raw, {
+          method: 'registry',
+          signedAt: record.timestamp,
+          reason: raw.valid ? undefined : 'El documento no coincide con la firma registrada',
+        }));
+        return;
+      }
 
       res.status(200).json({
         message: 'Signature verification completed',
-        ...verificationResponse,
+        valid: false,
+        trusted: false,
+        verification_method: 'none',
+        reason: 'La firma no fue emitida por QuantumGuard: incluye el certificado del firmante o usa el bundle original',
+        document_hash: storageService.calculateHash(file.buffer),
+        algorithm: canonicalAlgorithm(req.body?.algorithm) || 'desconocido',
+        verification_timestamp: new Date().toISOString(),
+        quantum_safe: false,
+        details: {},
       });
     } catch (error: any) {
+      if (error instanceof CryptoInputError) {
+        res.status(400).json({ error: 'Bad Request', message: error.message });
+        return;
+      }
       console.error('Verify signature error:', error);
 
       res.status(500).json({
         error: 'Internal Server Error',
-        message: error.message || 'Failed to verify signature',
+        message: 'Failed to verify signature',
       });
     }
   }
@@ -237,6 +303,7 @@ export class DocumentsController {
             as: 'signatures',
           },
         ],
+        order: LATEST_SIGNATURE_FIRST,
       });
 
       if (!document) {
@@ -390,6 +457,7 @@ export class DocumentsController {
             as: 'signatures',
           },
         ],
+        order: LATEST_SIGNATURE_FIRST,
       });
 
       if (!document) {
@@ -413,127 +481,72 @@ export class DocumentsController {
       // If document is signed, return ZIP bundle with certificate
       if (document.status === 'signed' && document.signatures && document.signatures.length > 0) {
         const sig = document.signatures[0];
-        const baseName = document.filename.replace(/\.[^.]+$/, '');
+        const cmsBuffer = sig.cms_signature ? Buffer.from(sig.cms_signature, 'base64') : null;
+        const isPdf = document.mime_type === 'application/pdf';
 
-        const certificate = {
-          quantum_signature_certificate: {
-            version: '1.0',
-            issuer: 'QuantumGuard AI - Post Cuantica Lab',
-            standard: sig.algorithm.startsWith('SLH-DSA') ? 'NIST FIPS 205 (SLH-DSA)' : 'NIST FIPS 204 (ML-DSA)',
-          },
-          document: {
-            filename: document.filename,
-            size_bytes: document.file_size,
-            mime_type: document.mime_type,
-            sha3_256_hash: document.file_hash,
-          },
-          signature: {
-            id: sig.id,
-            algorithm: sig.algorithm,
-            algorithm_display: sig.algorithmDisplay,
-            quantum_safe: sig.quantum_safe,
-            signature_size_bytes: sig.signature_size,
-            document_hash: sig.document_hash,
-            signed_at: sig.timestamp,
-            valid_until: sig.valid_until,
-            is_valid: sig.isValid,
-            public_key: sig.public_key,
-            signature_data: sig.signature_data,
-          },
-          verification: {
-            instructions: 'To verify this signature, upload the original document along with the public_key and signature_data to the QuantumGuard verification endpoint.',
-            endpoint: '/api/documents/verify',
-          },
-        };
+        let caCertificate: string | null = null;
+        if (sig.signer_cert) {
+          try {
+            caCertificate = await cryptoService.getCaCertificate();
+          } catch (caError) {
+            console.warn('CA certificate unavailable for bundle:', caError);
+          }
+        }
 
-        const zipFilename = `${baseName}_quantum_signed.zip`;
+        let sealedPdf: Buffer | null = null;
+        if (isPdf) {
+          try {
+            sealedPdf = await cryptoService.addPdfSeal(fileBuffer, document.filename, {
+              algorithm: sig.algorithm,
+              algorithm_display: sig.algorithmDisplay,
+              document_hash: sig.document_hash,
+              signed_at: sig.timestamp?.toISOString?.() || String(sig.timestamp),
+              valid_until: sig.valid_until?.toISOString?.() || '',
+              signature_id: sig.id,
+              oid: '',
+              nist_standard: sig.algorithm.startsWith('SLH-DSA') ? 'FIPS 205 (SLH-DSA)' : 'FIPS 204 (ML-DSA)',
+            });
+          } catch (sealError) {
+            console.warn('PDF seal failed, bundle will not include a sealed copy:', sealError);
+          }
+        }
+
+        const files = buildBundleFiles(document, {
+          hasCertificate: Boolean(sig.signer_cert),
+          hasCa: Boolean(caCertificate),
+          hasCmsField: Boolean(cmsBuffer),
+          cmsIsReal: Boolean(cmsBuffer && isCmsSignedData(cmsBuffer)),
+          sealed: Boolean(sealedPdf),
+        });
+        const zipFilename = `${files.original.replace(/^original_/, '').replace(/\.[^.]+$/, '')}_quantum_signed.zip`;
 
         res.setHeader('Content-Type', 'application/zip');
         res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(zipFilename)}"`);
 
         const archive = archiver('zip', { zlib: { level: 9 } });
-        archive.on('error', (err) => { throw err; });
+        archive.on('error', (err) => {
+          console.error('Bundle archive error:', err);
+          res.destroy(err);
+        });
         archive.pipe(res);
 
-        archive.append(fileBuffer, { name: `original_${document.filename}` });
-
-        // Generate sealed PDF with visual stamp if it's a PDF
-        if (document.mime_type === 'application/pdf') {
-          try {
-            const nistStandard = sig.algorithm.startsWith('SLH-DSA') ? 'FIPS 205 (SLH-DSA)' : 'FIPS 204 (ML-DSA)';
-            const sealedPdf = await cryptoService.addPdfSeal(
-              fileBuffer,
-              document.filename,
-              {
-                algorithm: sig.algorithm,
-                algorithm_display: sig.algorithmDisplay,
-                document_hash: sig.document_hash,
-                signed_at: sig.timestamp?.toISOString?.() || String(sig.timestamp),
-                valid_until: sig.valid_until?.toISOString?.() || String(sig.valid_until),
-                signature_id: sig.id,
-                oid: '',
-                nist_standard: nistStandard,
-              },
-            );
-            archive.append(sealedPdf, { name: document.filename });
-          } catch (sealError) {
-            console.warn('PDF seal failed, including original only:', sealError);
-            archive.append(fileBuffer, { name: document.filename });
-          }
-        } else {
-          archive.append(fileBuffer, { name: document.filename });
+        archive.append(fileBuffer, { name: files.original });
+        if (sealedPdf && files.sealedCopy) {
+          archive.append(sealedPdf, { name: files.sealedCopy });
         }
-        archive.append(JSON.stringify(certificate, null, 2), { name: `${baseName}_quantum_certificate.json` });
-
-        // Add X.509 PKI artifacts if available
-        if (sig.signer_cert) {
-          archive.append(sig.signer_cert, { name: 'signer_certificate.pem' });
+        archive.append(JSON.stringify(buildCertificateJson(document, sig, files), null, 2), {
+          name: files.certificateJson,
+        });
+        if (sig.signer_cert && files.signerCertificate) {
+          archive.append(sig.signer_cert, { name: files.signerCertificate });
         }
-        if (sig.cms_signature) {
-          const cmsDer = Buffer.from(sig.cms_signature, 'base64');
-          archive.append(cmsDer, { name: 'signature.p7s' });
+        if (caCertificate && files.caCertificate) {
+          archive.append(caCertificate, { name: files.caCertificate });
         }
-
-        // Add CA cert from crypto service if PKI artifacts exist
-        if (sig.signer_cert || sig.cms_signature) {
-          try {
-            const caCertResponse = await cryptoService.healthCheck()
-              ? await (await import('axios')).default.get(
-                  `${process.env.CRYPTO_SERVICE_URL || 'http://localhost:8001'}/crypto/pki/ca`
-                )
-              : null;
-            if (caCertResponse?.data?.certificate_pem) {
-              archive.append(caCertResponse.data.certificate_pem, { name: 'ca_certificate.pem' });
-            }
-          } catch {
-            // CA cert not available, skip
-          }
-
-          // Add verification instructions
-          const verifyMd = `# Verificacion de Firma Post-Cuantica
-## QuantumGuard AI - Post Cuantica Lab
-
-### Verificar con OpenSSL 3.5+
-\`\`\`bash
-openssl cms -verify \\
-  -in signature.p7s \\
-  -content ${document.filename} \\
-  -CAfile ca_certificate.pem \\
-  -inform DER \\
-  -binary \\
-  -purpose any
-\`\`\`
-
-### Informacion
-- **Algoritmo:** ${sig.algorithm} (${sig.algorithmDisplay})
-- **Estandar:** ${sig.algorithm.startsWith('SLH-DSA') ? 'FIPS 205 (SLH-DSA)' : 'FIPS 204 (ML-DSA)'}
-- **RFC:** RFC 9881 (X.509), RFC 9882 (CMS)
-- **Hash:** SHA-3-256
-- **Firmado:** ${sig.timestamp}
-- **Valido hasta:** ${sig.valid_until}
-`;
-          archive.append(verifyMd, { name: 'VERIFY.md' });
+        if (cmsBuffer) {
+          archive.append(cmsBuffer, { name: (files.cms || files.legacyRawSignature)! });
         }
+        archive.append(buildVerifyMarkdown(sig, files), { name: 'VERIFY.md' });
 
         await archive.finalize();
         return;
