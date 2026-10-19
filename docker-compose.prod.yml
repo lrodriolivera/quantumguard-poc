@@ -95,6 +95,12 @@ services:
       - RESEND_API_KEY=${RESEND_API_KEY:-}
       - RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL:-QuantumGuard <firmas@postcuantica.io>}
       - FRONTEND_BASE_URL=${FRONTEND_BASE_URL:-https://app.postcuantica.io}
+      # Billing (Basic/Pro plans). Without a key, checkout/portal fail with a
+      # clear 503 and the webhook rejects with 503 instead of silently no-op'ing.
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - STRIPE_PRICE_BASIC=${STRIPE_PRICE_BASIC:-}
+      - STRIPE_PRICE_PRO=${STRIPE_PRICE_PRO:-}
     volumes:
       - backend_uploads:/app/uploads
       - crypto_tls_public:/app/crypto-tls:ro
@@ -113,6 +119,7 @@ services:
         condition: service_healthy
     networks:
       - internal
+      - egress
 
   # Frontend (React + Nginx)
   frontend:
@@ -152,5 +159,9 @@ networks:
   internal:
     driver: bridge
     internal: true
+  # Outbound-only egress for backend calls to Resend/Stripe. Separate from
+  # `external` so the backend never joins the tunnel-facing shared network.
+  egress:
+    driver: bridge
   external:
     driver: bridge

@@ -11,11 +11,13 @@ import kemRoutes from './routes/kem.routes';
 import pkiRoutes from './routes/pki.routes';
 import envelopeRoutes from './routes/envelope.routes';
 import signRoutes from './routes/sign.routes';
+import billingRoutes from './routes/billing.routes';
 
 // Import middleware
 import { generalLimiter, authLimiter } from './middleware/rateLimit.middleware';
 import { sanitizeInputs } from './middleware/validation.middleware';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
+import { billingController } from './controllers/billing.controller';
 
 // Load environment variables
 dotenv.config();
@@ -41,6 +43,14 @@ class App {
       origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
       credentials: true
     }));
+
+    // Stripe webhook: verifies the signature against the exact raw bytes
+    // Stripe sent, so it must be registered before the JSON body parser.
+    this.app.post(
+      '/api/billing/webhook',
+      express.raw({ type: 'application/json', limit: '1mb' }),
+      (req: Request, res: Response) => billingController.handleWebhook(req, res)
+    );
 
     // Body parsing
     this.app.use(express.json({ limit: '10mb' }));
@@ -93,6 +103,7 @@ class App {
     this.app.use('/api/pki', pkiRoutes);
     this.app.use('/api/envelopes', envelopeRoutes);
     this.app.use('/api/sign', signRoutes);
+    this.app.use('/api/billing', billingRoutes);
   }
 
   private errorHandlers(): void {
