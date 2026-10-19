@@ -12,6 +12,7 @@ import {
   Clock,
   XCircle,
   Shield,
+  ShieldOff,
 } from 'lucide-react';
 import { useDocuments } from '../hooks/useDocuments';
 import { documentService } from '../services/document.service';
@@ -26,6 +27,14 @@ import {
 } from '../components/ui';
 import type { Document } from '../types';
 
+const REVOCATION_REASONS = [
+  { value: 'unspecified', label: 'Sin especificar' },
+  { value: 'keyCompromise', label: 'Clave o cuenta comprometida' },
+  { value: 'superseded', label: 'Reemplazada por una nueva firma' },
+  { value: 'affiliationChanged', label: 'Cambio de cargo o afiliación' },
+  { value: 'cessationOfOperation', label: 'El documento ya no está vigente' },
+];
+
 const STATUS_OPTIONS = [
   { value: '', label: 'Todos' },
   { value: 'pending', label: 'Pendientes' },
@@ -39,6 +48,10 @@ export default function Documents() {
   const [statusFilter, setStatusFilter] = useState('');
   const [deleteModal, setDeleteModal] = useState<Document | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [revokeModal, setRevokeModal] = useState<Document | null>(null);
+  const [revokeReason, setRevokeReason] = useState('unspecified');
+  const [isRevoking, setIsRevoking] = useState(false);
+  const [revokeMessage, setRevokeMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const {
     documents,
@@ -62,6 +75,27 @@ export default function Documents() {
       setDeleteModal(null);
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleRevoke = async () => {
+    if (!revokeModal) return;
+    setIsRevoking(true);
+    try {
+      await documentService.revokeLatestSignature(revokeModal.id, revokeReason);
+      setRevokeMessage({
+        type: 'success',
+        text: `Firma de "${revokeModal.originalName || revokeModal.filename}" revocada: ya no verificará como válida.`,
+      });
+      setRevokeModal(null);
+    } catch (err) {
+      const e = err as { response?: { data?: { message?: string } }; message?: string };
+      setRevokeMessage({
+        type: 'error',
+        text: e.response?.data?.message || e.message || 'No se pudo revocar la firma',
+      });
+    } finally {
+      setIsRevoking(false);
     }
   };
 
@@ -249,6 +283,21 @@ export default function Documents() {
                     >
                       <Download className="w-4 h-4" />
                     </Button>
+                    {(doc.status === 'signed' || doc.status === 'verified') && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setRevokeReason('unspecified');
+                          setRevokeModal(doc);
+                        }}
+                        className="text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                        aria-label="Revocar firma"
+                        title="Revocar firma"
+                      >
+                        <ShieldOff className="w-4 h-4" />
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"
@@ -280,6 +329,53 @@ export default function Documents() {
           )}
         </div>
       )}
+
+      {revokeMessage && (
+        <div className="fixed bottom-6 right-6 max-w-sm z-50">
+          <Alert variant={revokeMessage.type} onClose={() => setRevokeMessage(null)}>
+            {revokeMessage.text}
+          </Alert>
+        </div>
+      )}
+
+      {/* Revoke Signature Modal */}
+      <Modal
+        isOpen={!!revokeModal}
+        onClose={() => setRevokeModal(null)}
+        title="Revocar firma"
+        size="sm"
+      >
+        <div>
+          <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <ShieldOff className="w-6 h-6 text-amber-600" />
+          </div>
+          <p className="text-gray-600 mb-4 text-center">
+            La firma más reciente de "{revokeModal?.originalName || revokeModal?.filename}" se publicará
+            en la lista de revocación (CRL) y dejará de verificar como válida. No se puede deshacer.
+          </p>
+          <label htmlFor="revoke-reason" className="block text-sm font-medium text-gray-700 mb-1">
+            Motivo
+          </label>
+          <select
+            id="revoke-reason"
+            value={revokeReason}
+            onChange={(e) => setRevokeReason(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 mb-6 focus:outline-none focus:ring-2 focus:ring-quantum-500"
+          >
+            {REVOCATION_REASONS.map((r) => (
+              <option key={r.value} value={r.value}>{r.label}</option>
+            ))}
+          </select>
+          <div className="flex space-x-3 justify-center">
+            <Button variant="outline" onClick={() => setRevokeModal(null)}>
+              Cancelar
+            </Button>
+            <Button variant="danger" onClick={handleRevoke} isLoading={isRevoking}>
+              Revocar firma
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Delete Confirmation Modal */}
       <Modal

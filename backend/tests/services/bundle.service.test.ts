@@ -42,6 +42,22 @@ describe('safeEntryName', () => {
 });
 
 describe('buildVerifyMarkdown', () => {
+  it('documents hybrid, intermediate, time-stamp and CRL verification', () => {
+    const files = buildBundleFiles(doc, {
+      hasCertificate: true, hasClassical: true, hasIntermediate: true, hasCa: true, hasTsa: true,
+      hasCmsField: true, cmsIsReal: true, hasTimestamp: true, signedPdf: true, sealed: false,
+    });
+    const md = buildVerifyMarkdown({ ...sig, country: 'CO', hybrid: true, classical_algorithm: 'ECDSA-P256-SHA256' }, files);
+
+    expect(files.signedPdf).toBe('contrato final_firmado.pdf');
+    expect(files.sealedCopy).toBeUndefined();
+    expect(md).toContain('-untrusted intermediate_certificate.pem');
+    expect(md).toContain('signer_certificate.pem signer_certificate_ecdsa.pem');
+    expect(md).toContain('-in timestamp.tst');
+    expect(md).toContain('/api/pki/crl/CO.crl');
+    expect(md).toMatch(/híbrida/);
+  });
+
   it('points CMS verification at the original file, not the sealed copy', () => {
     const files = buildBundleFiles(doc, { hasCertificate: true, hasCa: true, hasCmsField: true, cmsIsReal: true, sealed: true });
     const md = buildVerifyMarkdown(sig, files);

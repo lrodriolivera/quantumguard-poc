@@ -1,9 +1,25 @@
 import {
   buildVerificationResult,
   canonicalAlgorithm,
+  parseBoolean,
+  parseCountry,
   signerIdentity,
   x509InvalidReason,
 } from '../../src/utils/signature.utils';
+
+describe('parseCountry / parseBoolean', () => {
+  it('accepts CL, CO, ES case-insensitively and defaults to CL', () => {
+    expect(parseCountry('es')).toBe('ES');
+    expect(parseCountry(undefined)).toBe('CL');
+    expect(parseCountry('PY')).toBeNull();
+  });
+
+  it('parses multipart booleans strictly', () => {
+    expect(parseBoolean('false', true)).toBe(false);
+    expect(parseBoolean(undefined, true)).toBe(true);
+    expect(parseBoolean('yes', true)).toBeNull();
+  });
+});
 
 describe('canonicalAlgorithm', () => {
   it('maps legacy Dilithium names to FIPS 204 names', () => {
@@ -34,6 +50,7 @@ const base = {
   valid: false,
   signature_valid: true,
   chain_valid: true,
+  revoked: false as boolean | null,
   within_validity: true as boolean | null,
   document_hash: 'h',
   algorithm: 'ML-DSA-44',
@@ -64,6 +81,6 @@ describe('buildVerificationResult', () => {
 
   it('exposes signer identity for trusted certificates', () => {
     const r = buildVerificationResult({ ...base, valid: true }, { method: 'certificate_chain' });
-    expect(r.signer).toEqual({ name: 'Rene', email: 'r@x.io' });
+    expect(r.signer).toEqual({ name: 'Rene', email: 'r@x.io', country: null });
   });
 });

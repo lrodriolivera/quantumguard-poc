@@ -6,8 +6,13 @@
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import FormData from 'form-data';
+import fs from 'fs';
+import https from 'https';
 
 const CRYPTO_SERVICE_URL = process.env.CRYPTO_SERVICE_URL || 'http://localhost:8001';
+const CRYPTO_SERVICE_TOKEN = process.env.CRYPTO_SERVICE_TOKEN || '';
+// Self-signed crypto-service certificate, pinned as the only trusted CA for this client.
+const CRYPTO_TLS_CA_FILE = process.env.CRYPTO_TLS_CA_FILE || '';
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
 
@@ -48,14 +53,27 @@ export interface CertificateSummary {
   serial: string;
   common_name: string | null;
   email: string | null;
+  country?: string | null;
   not_before: string;
   not_after: string;
   algorithm: string;
 }
 
 export interface X509SignatureResponse extends SignatureResponse {
+  country: string;
+  hybrid: boolean;
+  classical: {
+    algorithm: string;
+    signature: string;
+    cert_pem: string;
+    certificate: CertificateSummary;
+  } | null;
+  time_stamp: { token: string; gen_time: string; serial: string; policy: string };
+  signed_pdf: string | null;
   pki: {
     signer_cert_pem: string;
+    issuer_cert_pem: string;
+    tsa_cert_pem: string;
     ca_cert_pem: string;
     cms_signature_b64: string;
     cms_size: number;
@@ -70,17 +88,59 @@ export interface X509SignatureResponse extends SignatureResponse {
 export interface X509VerificationResponse extends VerificationResponse {
   signature_valid: boolean;
   chain_valid: boolean;
+  revoked: boolean | null;
   within_validity: boolean | null;
   certificate: CertificateSummary;
 }
 
+export interface BundleSigner extends CertificateSummary {
+  revoked: boolean | null;
+  post_quantum: boolean;
+}
+
+export interface BundleVerificationResponse extends VerificationResponse {
+  reason: string | null;
+  cms_valid: boolean;
+  revoked: boolean | null;
+  hybrid: boolean;
+  signers: BundleSigner[];
+  time_stamp: { valid: boolean; gen_time: string | null; serial?: string } | null;
+  certificate: BundleSigner | null;
+}
+
+export interface PdfVerificationResponse {
+  valid: boolean;
+  reason: string | null;
+  hybrid: boolean;
+  timestamp: string | null;
+  signatures: Array<{
+    type: 'signature' | 'timestamp';
+    valid: boolean;
+    revoked?: boolean | null;
+    algorithm?: string | null;
+    post_quantum?: boolean;
+    signer?: BundleSigner | null;
+    gen_time?: string | null;
+  }>;
+  document_hash: string;
+  verification_timestamp: string;
+}
+
+export interface TrustMaterial {
+  root_pem: string;
+  issuing_pem: Record<string, string>;
+  tsa_pem: string;
+  legacy_pem: string | null;
+}
+
 interface KEMKeypairResponse {
+  keypair_id: string;
   public_key: string;
-  secret_key: string;
   algorithm: string;
   public_key_size: number;
   secret_key_size: number;
   created_at: string;
+  expires_at: string;
   quantum_safe: boolean;
 }
 
@@ -109,19 +169,39 @@ export class CryptoService {
   private client: AxiosInstance;
   private isServiceAvailable: boolean = false;
 
+  private tlsAgent: https.Agent | null = null;
+  private tlsCaMtime = 0;
+
   constructor() {
     this.client = axios.create({
       baseURL: CRYPTO_SERVICE_URL,
-      timeout: 30000, // 30 seconds
+      timeout: 60000,
       headers: {
         'Accept': 'application/json',
+        ...(CRYPTO_SERVICE_TOKEN ? { Authorization: `Bearer ${CRYPTO_SERVICE_TOKEN}` } : {}),
       },
+    });
+    this.client.interceptors.request.use((config) => {
+      const agent = this.currentTlsAgent();
+      if (agent) config.httpsAgent = agent;
+      return config;
     });
 
     console.log(`🔐 CryptoService initialized: ${CRYPTO_SERVICE_URL}`);
 
     // Check service availability on startup
     this.checkServiceAvailability();
+  }
+
+  /** Re-reads the pinned certificate when the crypto-service rotates it. */
+  private currentTlsAgent(): https.Agent | null {
+    if (!CRYPTO_TLS_CA_FILE) return null;
+    const mtime = fs.statSync(CRYPTO_TLS_CA_FILE).mtimeMs;
+    if (!this.tlsAgent || mtime !== this.tlsCaMtime) {
+      this.tlsAgent = new https.Agent({ ca: fs.readFileSync(CRYPTO_TLS_CA_FILE), keepAlive: true });
+      this.tlsCaMtime = mtime;
+    }
+    return this.tlsAgent;
   }
 
   /**
@@ -274,6 +354,7 @@ export class CryptoService {
     filename: string,
     algorithm: string,
     signer: { name: string; email: string },
+    options: { country: string; hybrid: boolean },
   ): Promise<X509SignatureResponse> {
     return this.withRetry(async () => {
       const formData = new FormData();
@@ -281,6 +362,8 @@ export class CryptoService {
       formData.append('algorithm', algorithm);
       formData.append('signer_name', signer.name);
       formData.append('signer_email', signer.email);
+      formData.append('country', options.country);
+      formData.append('hybrid', String(options.hybrid));
 
       const response = await this.client.post('/crypto/sign-x509', formData, {
         headers: formData.getHeaders(),
@@ -320,11 +403,90 @@ export class CryptoService {
   }
 
   /**
-   * Get the QuantumGuard CA certificate (PEM)
+   * Verify a CMS bundle signature (+ RFC 3161 time-stamp): all signers, chain, revocation
+   */
+  async verifyBundle(
+    fileBuffer: Buffer,
+    filename: string,
+    cmsSignature: string,
+    options: { timestampToken?: string | null; signedAt?: Date; requireHybrid?: boolean } = {},
+  ): Promise<BundleVerificationResponse> {
+    return this.withRetry(async () => {
+      const formData = new FormData();
+      formData.append('file', fileBuffer, { filename });
+      formData.append('cms_signature', cmsSignature);
+      if (options.timestampToken) formData.append('timestamp_token', options.timestampToken);
+      if (options.signedAt) formData.append('signed_at', options.signedAt.toISOString());
+      if (options.requireHybrid) formData.append('require_hybrid', 'true');
+
+      const response = await this.client.post('/crypto/verify-bundle', formData, {
+        headers: formData.getHeaders(),
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+      });
+      return response.data;
+    }, 'verifyBundle');
+  }
+
+  /**
+   * Verify the signatures embedded in a PDF
+   */
+  async verifyPdf(fileBuffer: Buffer, filename: string): Promise<PdfVerificationResponse> {
+    return this.withRetry(async () => {
+      const formData = new FormData();
+      formData.append('file', fileBuffer, { filename });
+      const response = await this.client.post('/crypto/pdf/verify', formData, {
+        headers: formData.getHeaders(),
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+      });
+      return response.data;
+    }, 'verifyPdf');
+  }
+
+  /**
+   * Revoke a signer certificate (published in the issuing CA's CRL)
+   */
+  async revokeCertificate(certificatePem: string, reason: string): Promise<{ serial: string; revoked_at: string }> {
+    return this.withRetry(async () => {
+      const formData = new FormData();
+      formData.append('certificate', certificatePem);
+      formData.append('reason', reason);
+      const response = await this.client.post('/crypto/pki/revoke', formData, { headers: formData.getHeaders() });
+      return response.data;
+    }, 'revokeCertificate');
+  }
+
+  /**
+   * QuantumGuard trust material: root, issuing CAs, TSA, legacy CA (PEM)
+   */
+  async getTrustMaterial(): Promise<TrustMaterial> {
+    const response = await this.client.get('/crypto/pki/ca');
+    return response.data;
+  }
+
+  /**
+   * Get the QuantumGuard root CA certificate (PEM)
    */
   async getCaCertificate(): Promise<string> {
-    const response = await this.client.get('/crypto/pki/ca');
-    return response.data.certificate_pem;
+    return (await this.getTrustMaterial()).root_pem;
+  }
+
+  async getCaFile(name: string): Promise<string> {
+    const response = await this.client.get(`/crypto/pki/ca/${encodeURIComponent(name)}.crt`, { responseType: 'text' });
+    return response.data;
+  }
+
+  async getCrl(name: string): Promise<Buffer> {
+    const response = await this.client.get(`/crypto/pki/crl/${encodeURIComponent(name)}.crl`, {
+      responseType: 'arraybuffer',
+    });
+    return Buffer.from(response.data);
+  }
+
+  async listCountries(): Promise<{ countries: { code: string; name: string }[]; default: string }> {
+    const response = await this.client.get('/crypto/pki/countries');
+    return response.data;
   }
 
   /**
@@ -423,11 +585,11 @@ export class CryptoService {
   /**
    * Decapsulate: recover shared secret from ciphertext + secret key
    */
-  async decapsulate(ciphertext: string, secretKey: string, algorithm: string = 'ML-KEM-768'): Promise<DecapsulationResponse> {
+  async decapsulate(ciphertext: string, keypairId: string, algorithm: string = 'ML-KEM-768'): Promise<DecapsulationResponse> {
     return this.withRetry(async () => {
       const formData = new FormData();
       formData.append('ciphertext', ciphertext);
-      formData.append('secret_key', secretKey);
+      formData.append('keypair_id', keypairId);
       formData.append('algorithm', algorithm);
 
       const response = await this.client.post('/crypto/kem/decapsulate', formData, {

@@ -4,7 +4,13 @@ import type {
   Document,
   VerificationResult,
   ApiResponse,
+  SignOptions,
 } from '../types';
+
+async function fileBase64(zip: JSZip, name: string): Promise<string | null> {
+  const entry = zip.files[name];
+  return entry ? entry.async('base64') : null;
+}
 
 async function verifyBundleBytes(
   zipBytes: ArrayBuffer
@@ -41,6 +47,8 @@ async function verifyBundleBytes(
 
   const certFile = zip.files['signer_certificate.pem'];
   const signerCertificate = certFile ? await certFile.async('string') : null;
+  const cms = await fileBase64(zip, 'signature.p7s');
+  const timestampToken = await fileBase64(zip, 'timestamp.tst');
 
   const originalBlob = await zip.files[originalName].async('blob');
   const originalFileName = originalName.slice('original_'.length);
@@ -55,6 +63,15 @@ async function verifyBundleBytes(
   formData.append('algorithm', sig.algorithm || 'ML-DSA-44');
   if (signerCertificate) {
     formData.append('certificate', signerCertificate);
+  }
+  if (cms) {
+    formData.append('cms', cms);
+  }
+  if (timestampToken) {
+    formData.append('timestampToken', timestampToken);
+  }
+  if (sig.hybrid) {
+    formData.append('hybrid', 'true');
   }
 
   const response = await api.post<VerificationResult>(
@@ -84,12 +101,15 @@ export const documentService = {
 
   async signDocument(
     documentId: string,
-    file: File,
-    algorithm: string = 'ML-DSA-44'
+    _file: File,
+    algorithm: string = 'ML-DSA-44',
+    options: SignOptions = { country: 'CL', hybrid: true }
   ): Promise<{ message: string; document: Document; signature: any }> {
+    // The server signs the stored upload; the file itself is not re-sent.
     const formData = new FormData();
-    formData.append('file', file);
     formData.append('algorithm', algorithm);
+    formData.append('country', options.country);
+    formData.append('hybrid', String(options.hybrid));
 
     const response = await api.post(`/documents/${documentId}/sign`, formData, {
       headers: {
@@ -100,12 +120,30 @@ export const documentService = {
   },
 
   async verifyUploadedDocument(file: File): Promise<VerificationResult> {
-    if (!file.name.toLowerCase().endsWith('.zip')) {
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.pdf')) {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await api.post<VerificationResult>('/documents/verify-pdf', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return response.data;
+    }
+    if (!name.endsWith('.zip')) {
       throw new Error(
-        'Sube el bundle ZIP que se descarga al firmar el documento.'
+        'Sube el bundle ZIP o el PDF firmado que se descargan al firmar el documento.'
       );
     }
     return verifyBundleBytes(await file.arrayBuffer());
+  },
+
+  async revokeLatestSignature(documentId: string, reason: string): Promise<void> {
+    const detail = await api.get(`/documents/${documentId}`);
+    const latest = detail.data?.signatures?.[0];
+    if (!latest) {
+      throw new Error('El documento no tiene firmas');
+    }
+    await api.post(`/documents/${documentId}/signatures/${latest.id}/revoke`, { reason });
   },
 
   async getDocument(documentId: string): Promise<any> {

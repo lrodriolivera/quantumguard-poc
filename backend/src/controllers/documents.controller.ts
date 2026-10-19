@@ -7,23 +7,41 @@ import { Request, Response } from 'express';
 import { Document } from '../models/document.model';
 import { Signature } from '../models/signature.model';
 import { User } from '../models/user.model';
-import { cryptoService, CryptoInputError } from '../services/crypto.service';
+import { cryptoService, CryptoInputError, TrustMaterial } from '../services/crypto.service';
 import { storageService } from '../services/storage.service';
 import {
   buildBundleFiles,
   buildCertificateJson,
   buildVerifyMarkdown,
   isCmsSignedData,
+  signedPdfName,
 } from '../services/bundle.service';
 import {
   DEFAULT_ALGORITHM,
+  REVOCATION_REASONS,
   SUPPORTED_ALGORITHMS,
+  SUPPORTED_COUNTRIES,
+  buildPdfVerificationResult,
   buildVerificationResult,
   canonicalAlgorithm,
+  parseBoolean,
+  parseCountry,
   signerIdentity,
-  x509InvalidReason,
 } from '../utils/signature.utils';
+import { Sequelize } from 'sequelize-typescript';
+import { createHash } from 'crypto';
 import archiver from 'archiver';
+
+/** Indexed lookup (md5 functional index) of a signature by its exact value. */
+function findSignatureRecord(signatureData: string): Promise<Signature | null> {
+  const digest = createHash('md5').update(signatureData).digest('hex');
+  return Signature.findOne({
+    where: Sequelize.and(
+      Sequelize.where(Sequelize.fn('md5', Sequelize.col('signature_data')), digest),
+      { signature_data: signatureData },
+    ),
+  });
+}
 
 // Newest signature first: bundles and clients use signatures[0] as "the" signature.
 const LATEST_SIGNATURE_FIRST: any = [[{ model: Signature, as: 'signatures' }, 'timestamp', 'DESC']];
@@ -106,10 +124,16 @@ export class DocumentsController {
 
       const { id } = req.params;
       const algorithm = canonicalAlgorithm(req.body?.algorithm || DEFAULT_ALGORITHM);
-      if (!algorithm) {
+      const country = parseCountry(req.body?.country);
+      const hybrid = parseBoolean(req.body?.hybrid, true);
+      if (!algorithm || !country || hybrid === null) {
         res.status(400).json({
           error: 'Bad Request',
-          message: `Unsupported algorithm. Supported: ${SUPPORTED_ALGORITHMS.join(', ')}`,
+          message: !algorithm
+            ? `Unsupported algorithm. Supported: ${SUPPORTED_ALGORITHMS.join(', ')}`
+            : !country
+              ? `Unsupported country. Supported: ${SUPPORTED_COUNTRIES.join(', ')}`
+              : 'hybrid must be true or false',
         });
         return;
       }
@@ -145,40 +169,61 @@ export class DocumentsController {
       }
 
       const user = await User.findByPk(req.userId);
-      const signatureResponse = await cryptoService.signDocumentX509(
+      const signed = await cryptoService.signDocumentX509(
         fileBuffer,
         document.filename,
         algorithm,
         signerIdentity(user),
+        { country, hybrid },
       );
 
-      if (signatureResponse.document_hash !== document.file_hash) {
+      if (signed.document_hash !== document.file_hash) {
         throw new Error('Crypto service signed content that differs from the stored document');
+      }
+
+      let signedPdf: { filePath: string; hash: string } | null = null;
+      if (signed.signed_pdf) {
+        signedPdf = await storageService.saveFile(
+          req.userId,
+          Buffer.from(signed.signed_pdf, 'base64'),
+          signedPdfName(document.filename),
+        );
       }
 
       const signature = await Signature.create({
         document_id: document.id,
-        algorithm: signatureResponse.algorithm,
-        public_key: signatureResponse.public_key,
-        signature_data: signatureResponse.signature,
-        document_hash: signatureResponse.document_hash,
-        timestamp: new Date(signatureResponse.timestamp),
-        valid_until: signatureResponse.valid_until ? new Date(signatureResponse.valid_until) : null,
-        quantum_safe: signatureResponse.quantum_safe,
-        signature_size: signatureResponse.signature_size,
-        signer_cert: signatureResponse.pki.signer_cert_pem,
-        cms_signature: signatureResponse.pki.cms_signature_b64,
+        algorithm: signed.algorithm,
+        public_key: signed.public_key,
+        signature_data: signed.signature,
+        document_hash: signed.document_hash,
+        timestamp: new Date(signed.timestamp),
+        valid_until: signed.valid_until ? new Date(signed.valid_until) : null,
+        quantum_safe: signed.quantum_safe,
+        signature_size: signed.signature_size,
+        signer_cert: signed.pki.signer_cert_pem,
+        cms_signature: signed.pki.cms_signature_b64,
+        issuer_cert: signed.pki.issuer_cert_pem,
+        country: signed.country,
+        cert_serial: signed.pki.certificate.serial,
+        hybrid: signed.hybrid,
+        classical_algorithm: signed.classical?.algorithm ?? null,
+        classical_signature: signed.classical?.signature ?? null,
+        classical_cert: signed.classical?.cert_pem ?? null,
+        timestamp_token: signed.time_stamp.token,
+        timestamp_time: new Date(signed.time_stamp.gen_time),
+        signed_pdf_path: signedPdf?.filePath ?? null,
+        signed_pdf_hash: signedPdf?.hash ?? null,
       });
 
       await document.update({ status: 'signed' });
 
-      console.log(`✅ Document signed: ${document.id} with ${algorithm}`);
+      console.log(`✅ Document signed: ${document.id} with ${algorithm} (${country}, hybrid=${hybrid})`);
 
       res.status(200).json({
         message: 'Document signed successfully',
         document: document.toSafeJSON(),
         signature: signature.toSafeJSON(),
-        certificate: signatureResponse.pki.certificate,
+        certificate: signed.pki.certificate,
       });
     } catch (error: any) {
       if (error instanceof CryptoInputError) {
@@ -198,14 +243,16 @@ export class DocumentsController {
    * Verify a document signature (public)
    * POST /api/documents/verify
    *
-   * A signature is only reported valid when its key is trusted: either the
-   * supplied certificate chains to the QuantumGuard CA, or the exact
-   * signature/public-key pair exists in our signature registry. A key sent by
-   * the caller is never trusted on its own.
+   * A signature is only reported valid when its key is trusted. In order:
+   *  1. registry: the exact signature/public-key pair was issued by us; the
+   *     stored CMS, time-stamp and revocation state are checked against the file;
+   *  2. CMS bundle (signature.p7s [+ timestamp]) whose signers chain to our root;
+   *  3. raw signature + signer certificate chaining to our root.
+   * A key sent by the caller is never trusted on its own.
    */
   async verifySignature(req: Request, res: Response): Promise<void> {
     try {
-      const { signature, publicKey, certificate } = req.body ?? {};
+      const { signature, publicKey, certificate, cms, timestampToken } = req.body ?? {};
 
       if (!req.file) {
         res.status(400).json({
@@ -215,33 +262,32 @@ export class DocumentsController {
         return;
       }
 
-      if (!signature || (!publicKey && !certificate)) {
+      if (!(signature && (publicKey || certificate)) && !cms) {
         res.status(400).json({
           error: 'Bad Request',
-          message: 'Signature and a certificate or public key are required',
+          message: 'Provide signature with a certificate or public key, or a CMS signature',
         });
         return;
       }
 
       const file = req.file;
-      const record = await Signature.findOne({ where: { signature_data: signature } });
+      const record = signature ? await findSignatureRecord(signature) : null;
       const registered = Boolean(record && publicKey && record.public_key === publicKey);
 
-      if (certificate) {
-        const x509 = await cryptoService.verifySignatureX509(
-          file.buffer, file.originalname, signature, certificate, record?.timestamp,
-        );
-        if (x509.valid || !registered) {
-          res.status(200).json(buildVerificationResult(x509, {
-            method: 'certificate_chain',
-            signedAt: record?.timestamp,
-            reason: x509.valid ? undefined : x509InvalidReason(x509),
+      if (registered && record) {
+        const revocation = { revokedAt: record.revoked_at, revocationReason: record.revocation_reason };
+        const storedCms = record.cms_signature ? Buffer.from(record.cms_signature, 'base64') : null;
+        if (storedCms && isCmsSignedData(storedCms)) {
+          const bundle = await cryptoService.verifyBundle(file.buffer, file.originalname, record.cms_signature!, {
+            timestampToken: record.timestamp_token,
+            signedAt: record.timestamp,
+            requireHybrid: record.hybrid,
+          });
+          res.status(200).json(buildVerificationResult(bundle, {
+            method: 'registry', signedAt: record.timestamp, ...revocation,
           }));
           return;
         }
-      }
-
-      if (registered && record) {
         const raw = await cryptoService.verifySignature(
           file.buffer, file.originalname, signature, record.public_key, record.algorithm,
         );
@@ -249,7 +295,25 @@ export class DocumentsController {
           method: 'registry',
           signedAt: record.timestamp,
           reason: raw.valid ? undefined : 'El documento no coincide con la firma registrada',
+          ...revocation,
         }));
+        return;
+      }
+
+      if (cms) {
+        const bundle = await cryptoService.verifyBundle(file.buffer, file.originalname, cms, {
+          timestampToken,
+          requireHybrid: parseBoolean(req.body?.hybrid, false) === true,
+        });
+        res.status(200).json(buildVerificationResult(bundle, { method: 'certificate_chain' }));
+        return;
+      }
+
+      if (certificate) {
+        const x509 = await cryptoService.verifySignatureX509(
+          file.buffer, file.originalname, signature, certificate,
+        );
+        res.status(200).json(buildVerificationResult(x509, { method: 'certificate_chain' }));
         return;
       }
 
@@ -276,6 +340,83 @@ export class DocumentsController {
         error: 'Internal Server Error',
         message: 'Failed to verify signature',
       });
+    }
+  }
+
+  /**
+   * Verify the signatures embedded in a PDF (public)
+   * POST /api/documents/verify-pdf
+   */
+  async verifyPdf(req: Request, res: Response): Promise<void> {
+    try {
+      if (!req.file) {
+        res.status(400).json({ error: 'Bad Request', message: 'No file provided' });
+        return;
+      }
+      const result = await cryptoService.verifyPdf(req.file.buffer, req.file.originalname);
+      const record = await Signature.findOne({
+        where: { signed_pdf_hash: storageService.calculateHash(req.file.buffer) },
+      });
+      res.status(200).json(buildPdfVerificationResult(result, {
+        revokedAt: record?.revoked_at,
+        revocationReason: record?.revocation_reason,
+      }));
+    } catch (error: any) {
+      if (error instanceof CryptoInputError) {
+        res.status(400).json({ error: 'Bad Request', message: error.message });
+        return;
+      }
+      console.error('Verify PDF error:', error);
+      res.status(500).json({ error: 'Internal Server Error', message: 'Failed to verify PDF' });
+    }
+  }
+
+  /**
+   * Revoke one of the caller's signatures
+   * POST /api/documents/:id/signatures/:signatureId/revoke
+   */
+  async revokeSignature(req: Request, res: Response): Promise<void> {
+    try {
+      if (!req.userId) {
+        res.status(401).json({ error: 'Unauthorized', message: 'User not authenticated' });
+        return;
+      }
+      const reason = req.body?.reason || 'unspecified';
+      if (!REVOCATION_REASONS.includes(reason)) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: `Unsupported reason. Supported: ${REVOCATION_REASONS.join(', ')}`,
+        });
+        return;
+      }
+
+      const document = await Document.findOne({ where: { id: req.params.id, user_id: req.userId } });
+      const signature = document
+        ? await Signature.findOne({ where: { id: req.params.signatureId, document_id: document.id } })
+        : null;
+      if (!document || !signature) {
+        res.status(404).json({ error: 'Not Found', message: 'Signature not found' });
+        return;
+      }
+      if (signature.revoked_at) {
+        res.status(409).json({ error: 'Conflict', message: 'Signature already revoked' });
+        return;
+      }
+
+      for (const cert of [signature.signer_cert, signature.classical_cert]) {
+        if (cert) await cryptoService.revokeCertificate(cert, reason);
+      }
+      await signature.update({ revoked_at: new Date(), revocation_reason: reason });
+
+      console.log(`⛔ Signature revoked: ${signature.id} (${reason})`);
+      res.status(200).json({ message: 'Signature revoked', signature: signature.toSafeJSON() });
+    } catch (error: any) {
+      if (error instanceof CryptoInputError) {
+        res.status(400).json({ error: 'Bad Request', message: error.message });
+        return;
+      }
+      console.error('Revoke signature error:', error);
+      res.status(500).json({ error: 'Internal Server Error', message: 'Failed to revoke signature' });
     }
   }
 
@@ -483,18 +624,21 @@ export class DocumentsController {
         const sig = document.signatures[0];
         const cmsBuffer = sig.cms_signature ? Buffer.from(sig.cms_signature, 'base64') : null;
         const isPdf = document.mime_type === 'application/pdf';
+        const isLegacy = !sig.issuer_cert;
 
-        let caCertificate: string | null = null;
+        let trust: TrustMaterial | null = null;
         if (sig.signer_cert) {
           try {
-            caCertificate = await cryptoService.getCaCertificate();
+            trust = await cryptoService.getTrustMaterial();
           } catch (caError) {
-            console.warn('CA certificate unavailable for bundle:', caError);
+            console.warn('Trust material unavailable for bundle:', caError);
           }
         }
+        const caCertificate = trust ? (isLegacy ? trust.legacy_pem : trust.root_pem) : null;
 
+        const signedPdf = sig.signed_pdf_path ? await storageService.loadFilePath(sig.signed_pdf_path) : null;
         let sealedPdf: Buffer | null = null;
-        if (isPdf) {
+        if (isPdf && !signedPdf) {
           try {
             sealedPdf = await cryptoService.addPdfSeal(fileBuffer, document.filename, {
               algorithm: sig.algorithm,
@@ -513,9 +657,14 @@ export class DocumentsController {
 
         const files = buildBundleFiles(document, {
           hasCertificate: Boolean(sig.signer_cert),
+          hasClassical: Boolean(sig.classical_cert),
+          hasIntermediate: Boolean(sig.issuer_cert),
           hasCa: Boolean(caCertificate),
+          hasTsa: Boolean(sig.timestamp_token && trust),
           hasCmsField: Boolean(cmsBuffer),
           cmsIsReal: Boolean(cmsBuffer && isCmsSignedData(cmsBuffer)),
+          hasTimestamp: Boolean(sig.timestamp_token),
+          signedPdf: Boolean(signedPdf),
           sealed: Boolean(sealedPdf),
         });
         const zipFilename = `${files.original.replace(/^original_/, '').replace(/\.[^.]+$/, '')}_quantum_signed.zip`;
@@ -530,23 +679,23 @@ export class DocumentsController {
         });
         archive.pipe(res);
 
-        archive.append(fileBuffer, { name: files.original });
-        if (sealedPdf && files.sealedCopy) {
-          archive.append(sealedPdf, { name: files.sealedCopy });
+        const entries: Array<[string | undefined, Buffer | string | null | undefined]> = [
+          [files.original, fileBuffer],
+          [files.signedPdf, signedPdf],
+          [files.sealedCopy, sealedPdf],
+          [files.certificateJson, JSON.stringify(buildCertificateJson(document, sig, files), null, 2)],
+          [files.signerCertificate, sig.signer_cert],
+          [files.classicalCertificate, sig.classical_cert],
+          [files.intermediateCertificate, sig.issuer_cert],
+          [files.caCertificate, caCertificate],
+          [files.tsaCertificate, trust?.tsa_pem],
+          [files.cms ?? files.legacyRawSignature, cmsBuffer],
+          [files.timestampToken, sig.timestamp_token ? Buffer.from(sig.timestamp_token, 'base64') : null],
+          ['VERIFY.md', buildVerifyMarkdown(sig, files)],
+        ];
+        for (const [name, content] of entries) {
+          if (name && content) archive.append(content, { name });
         }
-        archive.append(JSON.stringify(buildCertificateJson(document, sig, files), null, 2), {
-          name: files.certificateJson,
-        });
-        if (sig.signer_cert && files.signerCertificate) {
-          archive.append(sig.signer_cert, { name: files.signerCertificate });
-        }
-        if (caCertificate && files.caCertificate) {
-          archive.append(caCertificate, { name: files.caCertificate });
-        }
-        if (cmsBuffer) {
-          archive.append(cmsBuffer, { name: (files.cms || files.legacyRawSignature)! });
-        }
-        archive.append(buildVerifyMarkdown(sig, files), { name: 'VERIFY.md' });
 
         await archive.finalize();
         return;

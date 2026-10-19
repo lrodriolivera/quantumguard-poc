@@ -13,6 +13,8 @@ import {
 } from '../components/ui';
 import type { VerificationResult } from '../types';
 
+const COUNTRY_NAMES: Record<string, string> = { CL: 'Chile', CO: 'Colombia', ES: 'España' };
+
 export default function VerifyDocument() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [step, setStep] = useState<'upload' | 'verifying' | 'result'>('upload');
@@ -77,7 +79,7 @@ export default function VerifyDocument() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Sube el bundle ZIP firmado</CardTitle>
+              <CardTitle>Sube el bundle ZIP o el PDF firmado</CardTitle>
             </CardHeader>
             <CardContent>
               <FileUpload
@@ -86,9 +88,9 @@ export default function VerifyDocument() {
                 maxSize={10 * 1024 * 1024}
               />
               <p className="text-sm text-gray-500 mt-2">
-                Es el archivo <code>*_quantum_signed.zip</code> que se
-                descarga al firmar el documento (incluye el original, la firma
-                y los certificados).
+                Es el archivo <code>*_quantum_signed.zip</code> que se descarga al
+                firmar (original, firmas, certificados y sello de tiempo), o el{' '}
+                <code>*_firmado.pdf</code> que lleva las firmas embebidas.
               </p>
             </CardContent>
           </Card>
@@ -206,8 +208,43 @@ export default function VerifyDocument() {
                   {result.signed_at && (
                     <div className="flex items-center justify-between">
                       <span className="text-gray-500">Firmado:</span>
-                      <span className="font-medium text-gray-900">
+                      <span className="font-medium text-gray-900 text-right">
                         {new Date(result.signed_at).toLocaleString('es-ES')}
+                        {result.time_stamp?.valid && (
+                          <span className="block text-xs text-green-700">Sello de tiempo RFC 3161 verificado</span>
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  {isValid && result.signer?.country && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-500">CA emisora:</span>
+                      <span className="font-medium text-gray-900">
+                        QuantumGuard CA {COUNTRY_NAMES[result.signer.country] ?? result.signer.country}
+                      </span>
+                    </div>
+                  )}
+                  {result.signers && result.signers.length > 0 && (
+                    <div className="flex items-start justify-between">
+                      <span className="text-gray-500">Firmas:</span>
+                      <span className="text-right">
+                        {result.signers.map((s) => (
+                          <span key={`${s.algorithm}-${s.serial}`} className="block text-sm font-medium text-gray-900">
+                            {s.algorithm}{' '}
+                            <span className="text-xs text-gray-500">
+                              {s.post_quantum ? '(post-cuántica)' : '(clásica)'}
+                            </span>
+                          </span>
+                        ))}
+                        {result.hybrid && <span className="block text-xs text-quantum-600">Firma híbrida: ambas válidas</span>}
+                      </span>
+                    </div>
+                  )}
+                  {result.revoked && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-500">Estado:</span>
+                      <span className="font-medium text-red-700">
+                        Revocada{result.revoked_at ? ` el ${new Date(result.revoked_at).toLocaleDateString('es-ES')}` : ''}
                       </span>
                     </div>
                   )}
@@ -217,7 +254,9 @@ export default function VerifyDocument() {
                       <span className="font-medium text-gray-900 text-right max-w-[220px]">
                         {result.verification_method === 'certificate_chain'
                           ? 'Certificado emitido por la CA de QuantumGuard'
-                          : 'Firma registrada en QuantumGuard'}
+                          : result.verification_method === 'pdf_embedded'
+                            ? 'Firmas embebidas en el PDF, emitidas por QuantumGuard'
+                            : 'Firma registrada en QuantumGuard'}
                       </span>
                     </div>
                   )}

@@ -13,6 +13,7 @@ import { validateUUID } from '../middleware/validation.middleware';
 const router = Router();
 
 router.param('id', (req, res, next) => validateUUID('id')(req, res, next));
+router.param('signatureId', (req, res, next) => validateUUID('signatureId')(req, res, next));
 
 // Configure multer to store files in memory
 const storage = multer.memoryStorage();
@@ -42,6 +43,11 @@ router.post('/:id/sign', authenticate, signLimiter, upload.single('file'), (req,
   documentsController.signDocument(req, res)
 );
 
+// POST /api/documents/:id/signatures/:signatureId/revoke - Revoke one of the caller's signatures
+router.post('/:id/signatures/:signatureId/revoke', authenticate, signLimiter, (req, res) =>
+  documentsController.revokeSignature(req, res)
+);
+
 // GET /api/documents - List user's documents
 router.get('/', authenticate, (req, res) => documentsController.listDocuments(req, res));
 
@@ -66,6 +72,11 @@ router.delete('/:id', authenticate, (req, res) =>
 // POST /api/documents/verify - Verify a document signature
 router.post('/verify', verifyLimiter, upload.single('file'), (req, res) =>
   documentsController.verifySignature(req, res)
+);
+
+// POST /api/documents/verify-pdf - Verify the signatures embedded in a signed PDF
+router.post('/verify-pdf', verifyLimiter, upload.single('file'), (req, res) =>
+  documentsController.verifyPdf(req, res)
 );
 
 export default router;

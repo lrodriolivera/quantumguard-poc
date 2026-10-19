@@ -50,10 +50,16 @@ services:
       # CA key lives on this volume: back it up. Set to false once the CA exists so a
       # lost volume fails loudly instead of silently minting a new CA.
       - PKI_AUTO_INIT_CA=${PKI_AUTO_INIT_CA:-true}
+      # Unlocks the encrypted CA keys; keep it only in .env and an offline backup.
+      - PKI_KEY_PASSPHRASE=${PKI_KEY_PASSPHRASE:?PKI_KEY_PASSPHRASE is required}
+      - PKI_PUBLIC_BASE_URL=${PKI_PUBLIC_BASE_URL:-https://app.postcuantica.io}
+      - CRYPTO_SERVICE_TOKEN=${CRYPTO_SERVICE_TOKEN:?CRYPTO_SERVICE_TOKEN is required}
+      - TLS_ENABLED=true
     volumes:
       - crypto_pki:/app/pki
+      - crypto_tls_public:/app/tls-public
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=5)"]
+      test: ["CMD", "python", "/app/healthcheck.py"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -76,13 +82,17 @@ services:
       - PORT=5000
       - DATABASE_URL=postgresql://${POSTGRES_USER:-quantum_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-quantumguard}
       - REDIS_URL=redis://:${REDIS_PASSWORD:-quantum_redis_2025}@redis:6379
-      - CRYPTO_SERVICE_URL=http://crypto-service:8001
+      - CRYPTO_SERVICE_URL=https://crypto-service:8001
+      - CRYPTO_SERVICE_TOKEN=${CRYPTO_SERVICE_TOKEN:?CRYPTO_SERVICE_TOKEN is required}
+      - CRYPTO_TLS_CA_FILE=/app/crypto-tls/server.crt
+      - PKI_PUBLIC_BASE_URL=${PKI_PUBLIC_BASE_URL:-https://app.postcuantica.io}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1h}
       - JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN:-7d}
       - STORAGE_PATH=/app/uploads
     volumes:
       - backend_uploads:/app/uploads
+      - crypto_tls_public:/app/crypto-tls:ro
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/health', r => process.exit(r.statusCode === 200 ? 0 : 1))"]
       interval: 30s
@@ -129,6 +139,8 @@ volumes:
   backend_uploads:
     driver: local
   crypto_pki:
+    driver: local
+  crypto_tls_public:
     driver: local
 
 networks:

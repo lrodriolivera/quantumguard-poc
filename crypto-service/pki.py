@@ -1,34 +1,36 @@
 """
-QuantumGuard AI - PKI Module
+QuantumGuard AI - Signing PKI
 X.509 (RFC 9881 ML-DSA / RFC 9909 SLH-DSA) and CMS SignedData
 (RFC 9882 ML-DSA / RFC 9814 SLH-DSA) via OpenSSL 3.5+.
 
-Signing model: a fresh end-entity key is generated per signature, certified by
-the QuantumGuard CA with the signer's identity, used once and destroyed. The
-same key produces both the raw detached signature and the CMS SignedData, so
-every artifact in a bundle is anchored to the CA through the certificate.
+Per signature, fresh end-entity keys are certified by the issuing CA of the
+chosen country, used once and destroyed:
+  - a post-quantum key (ML-DSA / SLH-DSA), always;
+  - an ECDSA P-256 key when hybrid signing is requested.
+Both sign the same document inside one CMS SignedData; a hybrid signature is
+only valid when every SignerInfo verifies, so it stays secure as long as
+either algorithm is unbroken.
 """
 
 import base64
 import logging
 import os
 import re
-import secrets
-import subprocess
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Dict, List, Optional
+
+import ca as ca_module
+import der
+from ca import PASSIN, PKIError, run_openssl
 
 logger = logging.getLogger(__name__)
 
-OPENSSL_BIN = os.environ.get("OPENSSL_BIN", "/opt/openssl/bin/openssl")
-PKI_DIR = os.environ.get("PKI_DIR", "/app/pki")
-PKI_COUNTRY = os.environ.get("PKI_COUNTRY", "PY")
-PKI_ORG = "Post Cuantica Lab"
-PKI_OU = "QuantumGuard AI"
-SIGNER_CERT_DAYS = int(os.environ.get("SIGNER_CERT_DAYS", "365"))
 DEFAULT_SIGNER_NAME = "QuantumGuard Document Signer"
+SIGNER_CERT_DAYS = int(os.environ.get("SIGNER_CERT_DAYS", "365"))
+CLASSICAL_ALGORITHM = "ECDSA-P256"
+CLASSICAL_SIGNATURE_ALGORITHM = "ECDSA-P256-SHA256"
 
 ALGORITHM_ALIASES = {
     "Dilithium2": "ML-DSA-44",
@@ -56,15 +58,10 @@ ALGORITHMS = {
     "SLH-DSA-SHA2-256s": AlgorithmSpec("SLH-DSA-SHA2-256s", "2.16.840.1.101.3.4.3.24", "sha512", 64),
 }
 
-# DER-encoded OID arc 2.16.840.1.101.3.4.3 (NIST sigAlgs); last byte selects the algorithm.
 _NIST_SIGALG_PREFIX = bytes.fromhex("6086480165030403")
-_OID_LAST_BYTE_TO_ALGORITHM = {
-    int(spec.oid.rsplit(".", 1)[1]): name for name, spec in ALGORITHMS.items()
-}
-
-
-class PKIError(RuntimeError):
-    """Server-side PKI failure (OpenSSL error, missing CA)."""
+_OID_LAST_BYTE_TO_ALGORITHM = {int(s.oid.rsplit(".", 1)[1]): n for n, s in ALGORITHMS.items()}
+_EC_PUBLIC_KEY_OID = "1.2.840.10045.2.1"
+_P256_OID = "1.2.840.10045.3.1.7"
 
 
 class CertificateError(ValueError):
@@ -78,84 +75,12 @@ def canonical_algorithm(algorithm: str) -> str:
     return canonical
 
 
-def _run_openssl(*args, check: bool = True) -> subprocess.CompletedProcess:
-    result = subprocess.run([OPENSSL_BIN, *args], capture_output=True, timeout=60)
-    if check and result.returncode != 0:
-        stderr = result.stderr.decode("utf-8", errors="replace").strip()
-        raise PKIError(f"OpenSSL {args[0]} failed: {stderr}")
-    return result
-
-
 def get_openssl_version() -> str:
-    return _run_openssl("version").stdout.decode().strip()
+    return run_openssl("version").stdout.decode().strip()
 
 
-def _ca_key_path() -> str:
-    return os.path.join(PKI_DIR, "ca.key")
-
-
-def _ca_cert_path() -> str:
-    return os.path.join(PKI_DIR, "ca.crt")
-
-
-def ca_exists() -> bool:
-    return os.path.exists(_ca_key_path()) and os.path.exists(_ca_cert_path())
-
-
-def _read_ca_cert() -> str:
-    with open(_ca_cert_path(), "r") as f:
-        return f.read()
-
-
-def init_ca(algorithm: str = "ML-DSA-65", days: int = 3650, allow_create: bool = True) -> dict:
-    """Load the CA, creating it only when explicitly allowed.
-
-    In production a missing CA means a lost volume: generating a new one would
-    silently orphan every certificate already issued, so we refuse instead.
-    """
-    if ca_exists():
-        logger.info("CA already exists, loading existing certificate")
-        return get_ca_info()
-
-    if not allow_create:
-        raise PKIError(
-            f"CA not found in {PKI_DIR} and PKI_AUTO_INIT_CA is disabled. "
-            "Restore ca.key/ca.crt from backup."
-        )
-
-    os.makedirs(PKI_DIR, exist_ok=True)
-    spec = ALGORITHMS[canonical_algorithm(algorithm)]
-    subject = f"/C={PKI_COUNTRY}/O={PKI_ORG}/OU={PKI_OU}/CN=QuantumGuard Post-Quantum CA"
-    logger.warning(f"Generating NEW CA: algorithm={spec.openssl_name}, subject={subject}")
-
-    _run_openssl(
-        "req", "-x509",
-        "-newkey", spec.openssl_name,
-        "-keyout", _ca_key_path(),
-        "-out", _ca_cert_path(),
-        "-subj", subject,
-        "-days", str(days),
-        "-addext", "basicConstraints=critical,CA:TRUE",
-        "-addext", "keyUsage=critical,keyCertSign,cRLSign",
-        "-nodes",
-    )
-    os.chmod(_ca_key_path(), 0o600)
-    return get_ca_info()
-
-
-def get_ca_info() -> dict:
-    if not ca_exists():
-        return {"initialized": False}
-    result = _run_openssl(
-        "x509", "-in", _ca_cert_path(),
-        "-noout", "-subject", "-issuer", "-dates", "-serial",
-    )
-    return {
-        "initialized": True,
-        "certificate_pem": _read_ca_cert(),
-        "details": result.stdout.decode().strip(),
-        "path": _ca_cert_path(),
-    }
+def b64(data: bytes) -> str:
+    return base64.b64encode(data).decode()
 
 
 # ------------------------------------------------------------
@@ -176,74 +101,41 @@ def sanitize_email(email: Optional[str]) -> Optional[str]:
     return email if len(email) <= 254 and _EMAIL_RE.match(email) else None
 
 
-def _signer_openssl_config(common_name: str, email: Optional[str]) -> str:
-    san = f"subjectAltName = email:{email}\n" if email else ""
-    return (
-        "[req]\n"
-        "prompt = no\n"
-        "distinguished_name = dn\n"
-        "utf8 = yes\n"
-        "string_mask = utf8only\n"
-        "[dn]\n"
-        f"C = {PKI_COUNTRY}\n"
-        f"O = {PKI_ORG}\n"
-        f"OU = {PKI_OU}\n"
-        f"CN = {common_name}\n"
-        "[ext]\n"
-        "basicConstraints = critical,CA:FALSE\n"
-        "keyUsage = critical,digitalSignature,nonRepudiation\n"
-        "subjectKeyIdentifier = hash\n"
-        "authorityKeyIdentifier = keyid,issuer\n"
-        f"{san}"
-    )
-
-
-def _random_serial() -> str:
-    # 127-bit positive serial (RFC 5280 §4.1.2.2: <= 20 octets, positive).
-    return "0x" + format(secrets.randbits(127) | (1 << 126), "x")
-
-
 # ------------------------------------------------------------
 # Certificate parsing
 # ------------------------------------------------------------
 
-def _der_header(buf: bytes, pos: int) -> tuple:
-    """Return (tag, content_start, content_length) of the DER element at pos."""
-    tag = buf[pos]
-    length = buf[pos + 1]
-    pos += 2
-    if length & 0x80:
-        n = length & 0x7F
-        length = int.from_bytes(buf[pos:pos + n], "big")
-        pos += n
-    return tag, pos, length
-
-
 def parse_spki(spki_der: bytes) -> tuple:
-    """Extract (canonical_algorithm, raw_public_key) from a PQC SubjectPublicKeyInfo."""
+    """Return (algorithm, raw_public_key) for ML-DSA / SLH-DSA / ECDSA P-256 keys."""
     try:
-        tag, pos, _ = _der_header(spki_der, 0)
+        tag, pos, _ = der.header(spki_der, 0)
         if tag != 0x30:
             raise CertificateError("SPKI is not a SEQUENCE")
-        tag, alg_start, alg_len = _der_header(spki_der, pos)
-        if tag != 0x30:
-            raise CertificateError("SPKI algorithm is not a SEQUENCE")
-        tag, oid_start, oid_len = _der_header(spki_der, alg_start)
-        oid = spki_der[oid_start:oid_start + oid_len]
-        if tag != 0x06 or len(oid) != 9 or not oid.startswith(_NIST_SIGALG_PREFIX):
-            raise CertificateError("Certificate key is not ML-DSA / SLH-DSA")
-        algorithm = _OID_LAST_BYTE_TO_ALGORITHM.get(oid[-1])
-        if not algorithm:
-            raise CertificateError("Unsupported post-quantum key OID")
-        tag, bits_start, bits_len = _der_header(spki_der, alg_start + alg_len)
+        tag, alg_start, alg_len = der.header(spki_der, pos)
+        alg_items = der.children(spki_der, alg_start, alg_len)
+        if tag != 0x30 or not alg_items or alg_items[0][0] != 0x06:
+            raise CertificateError("Malformed SPKI algorithm")
+        key_oid = alg_items[0][1]
+        tag, bits_start, bits_len = der.header(spki_der, alg_start + alg_len)
         if tag != 0x03 or spki_der[bits_start] != 0x00:
             raise CertificateError("Malformed public key BIT STRING")
         raw = spki_der[bits_start + 1:bits_start + bits_len]
-    except IndexError as e:
-        raise CertificateError("Truncated SubjectPublicKeyInfo") from e
-    if len(raw) != ALGORITHMS[algorithm].public_key_size:
-        raise CertificateError("Public key size does not match its algorithm")
-    return algorithm, raw
+    except der.DERError as e:
+        raise CertificateError(f"Malformed SubjectPublicKeyInfo: {e}") from e
+
+    if len(key_oid) == 9 and key_oid.startswith(_NIST_SIGALG_PREFIX):
+        algorithm = _OID_LAST_BYTE_TO_ALGORITHM.get(key_oid[-1])
+        if not algorithm:
+            raise CertificateError("Unsupported post-quantum key OID")
+        if len(raw) != ALGORITHMS[algorithm].public_key_size:
+            raise CertificateError("Public key size does not match its algorithm")
+        return algorithm, raw
+    if der.decode_oid(key_oid) == _EC_PUBLIC_KEY_OID:
+        curve = alg_items[1][1] if len(alg_items) > 1 and alg_items[1][0] == 0x06 else b""
+        if not curve or der.decode_oid(curve) != _P256_OID:
+            raise CertificateError("Only ECDSA P-256 classical keys are supported")
+        return CLASSICAL_ALGORITHM, raw
+    raise CertificateError("Certificate key is not ML-DSA, SLH-DSA or ECDSA P-256")
 
 
 def _parse_openssl_date(value: str) -> datetime:
@@ -251,16 +143,13 @@ def _parse_openssl_date(value: str) -> datetime:
 
 
 def certificate_info(cert_pem: str) -> dict:
-    """Parse a PEM certificate into the fields verification needs."""
     if "-----BEGIN CERTIFICATE-----" not in (cert_pem or ""):
         raise CertificateError("Certificate must be PEM encoded")
     with tempfile.TemporaryDirectory() as tmpdir:
         cert_path = os.path.join(tmpdir, "cert.pem")
-        spki_path = os.path.join(tmpdir, "spki.der")
         with open(cert_path, "w") as f:
             f.write(cert_pem)
-
-        fields = _run_openssl(
+        fields = run_openssl(
             "x509", "-in", cert_path, "-noout",
             "-subject", "-issuer", "-serial", "-startdate", "-enddate",
             "-nameopt", "RFC2253,-esc_msb",
@@ -269,29 +158,31 @@ def certificate_info(cert_pem: str) -> dict:
         )
         if fields.returncode != 0:
             raise CertificateError("Certificate could not be parsed")
-        pub = _run_openssl("x509", "-in", cert_path, "-noout", "-pubkey", check=False)
+        pub = run_openssl("x509", "-in", cert_path, "-noout", "-pubkey", check=False)
         if pub.returncode != 0:
             raise CertificateError("Certificate public key could not be read")
         pub_pem = os.path.join(tmpdir, "pub.pem")
         with open(pub_pem, "wb") as f:
             f.write(pub.stdout)
-        _run_openssl("pkey", "-pubin", "-in", pub_pem, "-outform", "DER", "-out", spki_path)
-        with open(spki_path, "rb") as f:
-            algorithm, raw_public_key = parse_spki(f.read())
+        spki = run_openssl("pkey", "-pubin", "-in", pub_pem, "-outform", "DER").stdout
+        algorithm, raw_public_key = parse_spki(spki)
 
     text = fields.stdout.decode("utf-8", errors="replace")
     values = dict(
         line.split("=", 1) for line in text.splitlines()
         if "=" in line and line.split("=", 1)[0] in ("subject", "issuer", "serial", "notBefore", "notAfter")
     )
+    subject = values.get("subject", "").strip()
     email_match = re.search(r"email:([^\s,]+)", text)
-    cn_match = re.search(r"(?:^|,)CN=([^,]+)", values.get("subject", ""))
+    cn_match = re.search(r"(?:^|,)CN=([^,]+)", subject)
+    country_match = re.search(r"(?:^|,)C=([A-Z]{2})", subject)
     return {
-        "subject": values.get("subject", "").strip(),
+        "subject": subject,
         "issuer": values.get("issuer", "").strip(),
         "serial": values.get("serial", "").strip(),
         "common_name": cn_match.group(1) if cn_match else None,
         "email": email_match.group(1) if email_match else None,
+        "country": country_match.group(1) if country_match else None,
         "not_before": _parse_openssl_date(values["notBefore"]),
         "not_after": _parse_openssl_date(values["notAfter"]),
         "is_ca": "CA:TRUE" in text,
@@ -300,93 +191,104 @@ def certificate_info(cert_pem: str) -> dict:
     }
 
 
-def verify_certificate_chain(cert_pem: str, at_time: Optional[datetime] = None) -> bool:
-    """True if cert_pem was issued by the QuantumGuard CA.
+def certificate_summary(info: dict) -> dict:
+    return {
+        "subject": info["subject"],
+        "issuer": info["issuer"],
+        "serial": info["serial"],
+        "common_name": info["common_name"],
+        "email": info["email"],
+        "country": info["country"],
+        "not_before": info["not_before"].isoformat(),
+        "not_after": info["not_after"].isoformat(),
+        "algorithm": info["algorithm"],
+    }
 
-    Without a trusted signing time we skip the validity window check; callers
-    report the window separately so an expired signer cert does not invalidate
-    signatures made while it was in force.
+
+def split_pem_certificates(pem: str) -> List[str]:
+    return re.findall(r"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----\n?", pem, flags=re.S)
+
+
+# ------------------------------------------------------------
+# Chain and revocation
+# ------------------------------------------------------------
+
+def verify_certificate_chain(cert_pem: str, at_time: Optional[datetime] = None) -> Dict[str, Optional[bool]]:
+    """Check that cert_pem chains to a QuantumGuard trust anchor and is not revoked.
+
+    The chain is evaluated at the signing time when known (otherwise without a
+    validity-window check); revocation is evaluated against current CRLs.
     """
-    if not ca_exists():
-        raise PKIError("CA not initialized")
+    anchors = ca_module.trust_anchors_path()
+    intermediates = ca_module.intermediates_path()
     with tempfile.TemporaryDirectory() as tmpdir:
         cert_path = os.path.join(tmpdir, "cert.pem")
         with open(cert_path, "w") as f:
             f.write(cert_pem)
         time_args = ["-attime", str(int(at_time.timestamp()))] if at_time else ["-no_check_time"]
-        result = _run_openssl(
-            "verify", "-CAfile", _ca_cert_path(), *time_args, cert_path, check=False,
+        chain = run_openssl(
+            "verify", "-CAfile", anchors, "-untrusted", intermediates, *time_args, cert_path, check=False,
         )
-        return result.returncode == 0
+        if chain.returncode != 0:
+            return {"chain_valid": False, "revoked": None}
+        crls = ca_module.crl_bundle_path()
+        revocation = run_openssl(
+            "verify", "-CAfile", anchors, "-untrusted", intermediates,
+            "-CRLfile", crls, "-crl_check_all", "-no_check_time", cert_path, check=False,
+        )
+    if revocation.returncode == 0:
+        return {"chain_valid": True, "revoked": False}
+    output = (revocation.stdout + revocation.stderr).decode("utf-8", errors="replace")
+    if "certificate revoked" in output:
+        return {"chain_valid": True, "revoked": True}
+    logger.warning(f"Revocation status unavailable: {output.strip()[-200:]}")
+    return {"chain_valid": True, "revoked": None}
 
 
 # ------------------------------------------------------------
 # Signing
 # ------------------------------------------------------------
 
-def generate_signer_cert(algorithm: str, signer_name: str, signer_email: Optional[str]) -> dict:
-    if not ca_exists():
-        raise PKIError("CA not initialized")
-    spec = ALGORITHMS[canonical_algorithm(algorithm)]
-    common_name = sanitize_common_name(signer_name)
-    email = sanitize_email(signer_email)
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        cfg_path = os.path.join(tmpdir, "signer.cnf")
-        key_path = os.path.join(tmpdir, "signer.key")
-        csr_path = os.path.join(tmpdir, "signer.csr")
-        cert_path = os.path.join(tmpdir, "signer.crt")
-        with open(cfg_path, "w", encoding="utf-8") as f:
-            f.write(_signer_openssl_config(common_name, email))
-
-        _run_openssl(
-            "req", "-new", "-newkey", spec.openssl_name, "-nodes",
-            "-keyout", key_path, "-out", csr_path, "-config", cfg_path,
-        )
-        _run_openssl(
-            "x509", "-req", "-in", csr_path,
-            "-CA", _ca_cert_path(), "-CAkey", _ca_key_path(),
-            "-set_serial", _random_serial(),
-            "-days", str(SIGNER_CERT_DAYS),
-            "-extfile", cfg_path, "-extensions", "ext",
-            "-out", cert_path,
-        )
-        with open(key_path, "r") as f:
-            signer_key_pem = f.read()
-        with open(cert_path, "r") as f:
-            signer_cert_pem = f.read()
-
-    return {"signer_key_pem": signer_key_pem, "signer_cert_pem": signer_cert_pem}
+def _signer_config(common_name: str, email: Optional[str], country: str,
+                   issuer: ca_module.CertificateAuthority) -> str:
+    san = f"subjectAltName = email:{email}\n" if email else ""
+    return (
+        "[req]\nprompt = no\ndistinguished_name = dn\nutf8 = yes\nstring_mask = utf8only\n"
+        "[dn]\n"
+        f"C = {country}\nO = {ca_module.PKI_ORG}\nOU = {ca_module.PKI_OU}\nCN = {common_name}\n"
+        "[ext]\n"
+        "basicConstraints = critical,CA:FALSE\n"
+        "keyUsage = critical,digitalSignature,nonRepudiation\n"
+        "subjectKeyIdentifier = hash\n"
+        "authorityKeyIdentifier = keyid,issuer\n"
+        f"crlDistributionPoints = URI:{issuer.crl_url}\n"
+        f"authorityInfoAccess = caIssuers;URI:{issuer.cert_url}\n"
+        f"{san}"
+    )
 
 
-def _sign_with_key(document_bytes: bytes, signer_key_pem: str, signer_cert_pem: str, digest: str) -> tuple:
-    """Return (raw_signature, cms_der) produced by the same signer key."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        doc_path = os.path.join(tmpdir, "document.bin")
-        key_path = os.path.join(tmpdir, "signer.key")
-        cert_path = os.path.join(tmpdir, "signer.crt")
-        raw_path = os.path.join(tmpdir, "signature.sig")
-        cms_path = os.path.join(tmpdir, "signature.p7s")
-        with open(doc_path, "wb") as f:
-            f.write(document_bytes)
-        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT, 0o600)
-        with os.fdopen(fd, "w") as f:
-            f.write(signer_key_pem)
-        with open(cert_path, "w") as f:
-            f.write(signer_cert_pem)
+def _issue_signer_cert(tmpdir: str, prefix: str, keygen: List[str], config: str,
+                       issuer: ca_module.CertificateAuthority) -> tuple:
+    cfg = os.path.join(tmpdir, f"{prefix}.cnf")
+    key = os.path.join(tmpdir, f"{prefix}.key")
+    csr = os.path.join(tmpdir, f"{prefix}.csr")
+    crt = os.path.join(tmpdir, f"{prefix}.crt")
+    with open(cfg, "w", encoding="utf-8") as f:
+        f.write(config)
+    run_openssl("req", "-new", *keygen, "-nodes", "-keyout", key, "-out", csr, "-config", cfg)
+    os.chmod(key, 0o600)
+    run_openssl(
+        "x509", "-req", "-in", csr, "-CA", issuer.cert_path, "-CAkey", issuer.key_path, *PASSIN,
+        "-set_serial", ca_module._serial(), "-days", str(SIGNER_CERT_DAYS),
+        "-extfile", cfg, "-extensions", "ext", "-out", crt,
+        env_passphrase=True,
+    )
+    return key, crt
 
-        # Pure ML-DSA / SLH-DSA over the full message, empty context (FIPS 204/205).
-        _run_openssl("pkeyutl", "-sign", "-rawin", "-inkey", key_path, "-in", doc_path, "-out", raw_path)
-        _run_openssl(
-            "cms", "-sign", "-binary", "-md", digest,
-            "-in", doc_path, "-signer", cert_path, "-inkey", key_path,
-            "-outform", "DER", "-out", cms_path,
-        )
-        with open(raw_path, "rb") as f:
-            raw_signature = f.read()
-        with open(cms_path, "rb") as f:
-            cms_der = f.read()
-    return raw_signature, cms_der
+
+def _read(path: str, mode: str = "r"):
+    with open(path, mode) as f:
+        return f.read()
 
 
 def sign_document_full(
@@ -394,56 +296,150 @@ def sign_document_full(
     algorithm: str = "ML-DSA-44",
     signer_name: Optional[str] = None,
     signer_email: Optional[str] = None,
+    country: str = ca_module.DEFAULT_COUNTRY,
+    hybrid: bool = True,
+    pdf_to_embed: Optional[bytes] = None,
 ) -> dict:
     canonical = canonical_algorithm(algorithm)
     spec = ALGORITHMS[canonical]
-    cert = generate_signer_cert(canonical, signer_name or DEFAULT_SIGNER_NAME, signer_email)
-    raw_signature, cms_der = _sign_with_key(
-        document_bytes, cert["signer_key_pem"], cert["signer_cert_pem"], spec.cms_digest,
+    issuer = ca_module.issuing_ca(country)
+    config = _signer_config(
+        sanitize_common_name(signer_name), sanitize_email(signer_email), country, issuer,
     )
-    # The signer private key goes out of scope here and is never persisted.
-    info = certificate_info(cert["signer_cert_pem"])
 
-    if not cms_verify_document(document_bytes, cms_der):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        doc = os.path.join(tmpdir, "document.bin")
+        with open(doc, "wb") as f:
+            f.write(document_bytes)
+
+        pq_key, pq_crt = _issue_signer_cert(tmpdir, "pq", ["-newkey", spec.openssl_name], config, issuer)
+        pq_sig = os.path.join(tmpdir, "pq.sig")
+        # Pure ML-DSA / SLH-DSA over the full message, empty context (FIPS 204/205).
+        run_openssl("pkeyutl", "-sign", "-rawin", "-inkey", pq_key, "-in", doc, "-out", pq_sig)
+
+        signer_args = ["-signer", pq_crt, "-inkey", pq_key]
+        classical = None
+        ec_paths = None
+        if hybrid:
+            ec_key, ec_crt = _issue_signer_cert(
+                tmpdir, "ec", ["-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256"], config, issuer,
+            )
+            ec_sig = os.path.join(tmpdir, "ec.sig")
+            run_openssl("pkeyutl", "-sign", "-rawin", "-digest", "sha256", "-inkey", ec_key, "-in", doc, "-out", ec_sig)
+            signer_args += ["-signer", ec_crt, "-inkey", ec_key]
+            classical = {"signature_raw": _read(ec_sig, "rb"), "cert_pem": _read(ec_crt)}
+            ec_paths = {"key": ec_key, "cert": ec_crt}
+
+        cms_path = os.path.join(tmpdir, "signature.p7s")
+        run_openssl(
+            "cms", "-sign", "-binary", "-cades", "-md", spec.cms_digest,
+            "-in", doc, *signer_args, "-certfile", issuer.cert_path,
+            "-outform", "DER", "-out", cms_path,
+        )
+        signature_raw = _read(pq_sig, "rb")
+        signer_cert_pem = _read(pq_crt)
+        cms_der = _read(cms_path, "rb")
+
+        signed_pdf = None
+        if pdf_to_embed is not None:
+            import pdf_sign
+            signed_pdf = pdf_sign.sign_pdf(
+                pdf_to_embed, sanitize_common_name(signer_name),
+                {"key": pq_key, "cert": pq_crt}, ec_paths, issuer.cert_path, spec.cms_digest, tmpdir,
+            )
+    # Ephemeral signer private keys are gone with tmpdir.
+
+    check = cms_verify_document(document_bytes, cms_der)
+    if not check["valid"] or len(check["signers"]) != (2 if hybrid else 1):
         raise PKIError("Self-check failed: freshly created CMS signature does not verify")
 
+    info = certificate_info(signer_cert_pem)
+    if classical:
+        classical["info"] = certificate_info(classical["cert_pem"])
+
     logger.info(
-        f"PKI signing complete: algorithm={canonical}, oid={spec.oid}, "
-        f"raw={len(raw_signature)}B, cms={len(cms_der)}B, serial={info['serial']}"
+        f"PKI signing complete: algorithm={canonical}, country={country}, hybrid={hybrid}, "
+        f"raw={len(signature_raw)}B, cms={len(cms_der)}B, serial={info['serial']}"
     )
     return {
         "algorithm": canonical,
         "oid": spec.oid,
         "cms_digest": spec.cms_digest,
-        "signature_raw": raw_signature,
+        "country": country,
+        "signature_raw": signature_raw,
         "public_key_raw": info["public_key_raw"],
         "cms_der": cms_der,
-        "signer_cert_pem": cert["signer_cert_pem"],
-        "ca_cert_pem": _read_ca_cert(),
+        "signer_cert_pem": signer_cert_pem,
+        "issuer_cert_pem": _read(issuer.cert_path),
+        "root_cert_pem": _read(ca_module.root_ca().cert_path),
         "certificate": info,
+        "classical": classical,
+        "signed_pdf": signed_pdf,
     }
 
 
-def cms_verify_document(document_bytes: bytes, cms_der: bytes) -> bool:
-    """Verify a detached CMS SignedData against the document and the QuantumGuard CA."""
-    if not ca_exists():
-        raise PKIError("CA not initialized")
+def cms_verify_document(document_bytes: bytes, cms_der: bytes, at_time: Optional[datetime] = None) -> dict:
+    """Verify every SignerInfo of a detached CMS against the document and our trust anchors.
+
+    Returns per-signer certificate details and revocation status; valid only
+    when all signers verify, chain to a QuantumGuard anchor and none is revoked.
+    """
+    anchors = ca_module.trust_anchors_path()
+    intermediates = ca_module.intermediates_path()
     with tempfile.TemporaryDirectory() as tmpdir:
-        doc_path = os.path.join(tmpdir, "document.bin")
-        sig_path = os.path.join(tmpdir, "signature.p7s")
-        with open(doc_path, "wb") as f:
+        doc = os.path.join(tmpdir, "document.bin")
+        sig = os.path.join(tmpdir, "signature.p7s")
+        signers_out = os.path.join(tmpdir, "signers.pem")
+        with open(doc, "wb") as f:
             f.write(document_bytes)
-        with open(sig_path, "wb") as f:
+        with open(sig, "wb") as f:
             f.write(cms_der)
-        result = _run_openssl(
+        time_args = ["-attime", str(int(at_time.timestamp()))] if at_time else ["-no_check_time"]
+        result = run_openssl(
             "cms", "-verify", "-binary", "-inform", "DER",
-            "-in", sig_path, "-content", doc_path,
-            "-CAfile", _ca_cert_path(), "-purpose", "any", "-no_check_time",
-            "-out", os.devnull,
+            "-in", sig, "-content", doc,
+            "-CAfile", anchors, "-certfile", intermediates, "-purpose", "any", *time_args,
+            "-signer", signers_out, "-out", os.devnull,
             check=False,
         )
+        signer_pems = split_pem_certificates(_read(signers_out)) if os.path.exists(signers_out) else []
+
+    if result.returncode != 0:
+        return {"valid": False, "cms_valid": False, "revoked": None, "signers": []}
+
+    signers = []
+    any_revoked = False
+    for pem in signer_pems:
+        info = certificate_info(pem)
+        status = verify_certificate_chain(pem)
+        any_revoked = any_revoked or bool(status["revoked"])
+        signers.append({
+            **certificate_summary(info),
+            "revoked": status["revoked"],
+            "post_quantum": info["algorithm"] in ALGORITHMS,
+            "certificate_pem": pem,
+        })
+    has_pq = any(s["post_quantum"] for s in signers)
+    return {
+        "valid": has_pq and not any_revoked,
+        "cms_valid": True,
+        "revoked": any_revoked,
+        "signers": signers,
+    }
+
+
+def classical_verify(document_bytes: bytes, signature: bytes, cert_pem: str) -> bool:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        doc, sig, crt, pub = (os.path.join(tmpdir, n) for n in ("doc", "sig", "crt.pem", "pub.pem"))
+        with open(doc, "wb") as f:
+            f.write(document_bytes)
+        with open(sig, "wb") as f:
+            f.write(signature)
+        with open(crt, "w") as f:
+            f.write(cert_pem)
+        run_openssl("x509", "-in", crt, "-pubkey", "-noout", "-out", pub)
+        result = run_openssl(
+            "pkeyutl", "-verify", "-rawin", "-digest", "sha256", "-pubin", "-inkey", pub,
+            "-in", doc, "-sigfile", sig, check=False,
+        )
         return result.returncode == 0
-
-
-def b64(data: bytes) -> str:
-    return base64.b64encode(data).decode()

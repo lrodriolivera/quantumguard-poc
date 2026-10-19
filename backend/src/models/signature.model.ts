@@ -68,6 +68,46 @@ export class Signature extends Model {
   @Column(DataType.TEXT)
   cms_signature?: string;
 
+  @Column(DataType.STRING(2))
+  country?: string;
+
+  @Column(DataType.STRING(64))
+  cert_serial?: string;
+
+  @Column(DataType.TEXT)
+  issuer_cert?: string;
+
+  @Default(false)
+  @Column(DataType.BOOLEAN)
+  hybrid!: boolean;
+
+  @Column(DataType.STRING(50))
+  classical_algorithm?: string;
+
+  @Column(DataType.TEXT)
+  classical_signature?: string;
+
+  @Column(DataType.TEXT)
+  classical_cert?: string;
+
+  @Column(DataType.TEXT)
+  timestamp_token?: string;
+
+  @Column(DataType.DATE)
+  timestamp_time?: Date;
+
+  @Column(DataType.TEXT)
+  signed_pdf_path?: string;
+
+  @Column(DataType.STRING(64))
+  signed_pdf_hash?: string;
+
+  @Column(DataType.DATE)
+  revoked_at?: Date;
+
+  @Column(DataType.STRING(50))
+  revocation_reason?: string;
+
   @CreatedAt
   @Column(DataType.DATE)
   created_at!: Date;
@@ -77,9 +117,10 @@ export class Signature extends Model {
   document?: Document;
 
   /**
-   * Check if signature is still valid
+   * Signer certificate still in force and not revoked
    */
   get isValid(): boolean {
+    if (this.revoked_at) return false;
     if (!this.valid_until) return true;
     return new Date() < this.valid_until;
   }
@@ -130,6 +171,14 @@ export class Signature extends Model {
       quantum_safe: this.quantum_safe,
       signature_size: this.signature_size,
       signature_size_formatted: this.signatureSizeFormatted,
+      country: this.country ?? null,
+      cert_serial: this.cert_serial ?? null,
+      hybrid: Boolean(this.hybrid),
+      classical_algorithm: this.classical_algorithm ?? null,
+      timestamp_time: this.timestamp_time ?? null,
+      has_signed_pdf: Boolean(this.signed_pdf_path),
+      revoked_at: this.revoked_at ?? null,
+      revocation_reason: this.revocation_reason ?? null,
       created_at: this.created_at,
     };
   }

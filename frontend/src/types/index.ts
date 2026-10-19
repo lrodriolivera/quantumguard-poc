@@ -80,6 +80,22 @@ export interface SignatureResult {
   };
 }
 
+export type SignatureCountry = 'CL' | 'CO' | 'ES';
+
+export interface SignOptions {
+  country: SignatureCountry;
+  hybrid: boolean;
+}
+
+export interface VerificationSigner {
+  name: string | null;
+  email: string | null;
+  country: string | null;
+  algorithm?: string;
+  serial?: string;
+  post_quantum?: boolean;
+}
+
 export interface VerificationResult {
   message: string;
   valid: boolean;
@@ -89,10 +105,16 @@ export interface VerificationResult {
   quantum_safe: boolean;
   details: Record<string, string>;
   trusted?: boolean;
-  verification_method?: 'certificate_chain' | 'registry' | 'none';
+  verification_method?: 'certificate_chain' | 'registry' | 'pdf_embedded' | 'none';
   reason?: string;
   signed_at?: string;
-  signer?: { name: string | null; email: string | null };
+  hybrid?: boolean;
+  revoked?: boolean;
+  revoked_at?: string | null;
+  revocation_reason?: string | null;
+  time_stamp?: { valid: boolean; gen_time: string | null } | null;
+  signer?: VerificationSigner;
+  signers?: VerificationSigner[];
   certificate?: {
     subject: string;
     issuer: string;

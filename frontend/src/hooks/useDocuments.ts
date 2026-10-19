@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { documentService } from '../services/document.service';
-import type { Document, DocumentStats } from '../types';
+import type { Document, DocumentStats, SignOptions } from '../types';
 
 interface UseDocumentsReturn {
   documents: Document[];
@@ -17,7 +17,7 @@ interface UseDocumentsReturn {
   fetchDocument: (id: string) => Promise<void>;
   fetchStats: () => Promise<void>;
   uploadDocument: (file: File) => Promise<Document>;
-  signDocument: (documentId: string, file: File, algorithm?: string) => Promise<any>;
+  signDocument: (documentId: string, file: File, algorithm?: string, options?: SignOptions) => Promise<any>;
   deleteDocument: (documentId: string) => Promise<void>;
   clearError: () => void;
 }
@@ -96,11 +96,11 @@ export function useDocuments(): UseDocumentsReturn {
   }, []);
 
   const signDocument = useCallback(
-    async (documentId: string, file: File, algorithm?: string): Promise<any> => {
+    async (documentId: string, file: File, algorithm?: string, options?: SignOptions): Promise<any> => {
       setIsLoading(true);
       setError(null);
       try {
-        const response = await documentService.signDocument(documentId, file, algorithm);
+        const response = await documentService.signDocument(documentId, file, algorithm, options);
         return response;
       } catch (err: any) {
         const message = err?.response?.data?.message || err?.message || 'Error al firmar documento';

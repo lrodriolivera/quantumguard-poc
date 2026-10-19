@@ -59,7 +59,7 @@ WORKDIR /app
 
 # Unprivileged runtime user; /app/pki must be a persistent volume in production
 RUN useradd --system --uid 10001 --home-dir /app --shell /usr/sbin/nologin qg && \
-    mkdir -p /app/pki && chown qg:qg /app/pki && chmod 700 /app/pki
+    mkdir -p /app/pki /app/tls-public && chown qg:qg /app/pki /app/tls-public && chmod 700 /app/pki
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
@@ -83,15 +83,16 @@ RUN ldconfig && \
 # Copy application code
 COPY . .
 
+RUN chmod +x /app/docker-entrypoint.sh
 USER qg
-VOLUME ["/app/pki"]
+VOLUME ["/app/pki", "/app/tls-public"]
 
 # Expose port
 EXPOSE 8001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-  CMD python -c "import httpx; httpx.get('http://localhost:8001/health')" || exit 1
+  CMD python /app/healthcheck.py
 
 # Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["/app/docker-entrypoint.sh"]

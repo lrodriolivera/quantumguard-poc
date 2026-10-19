@@ -8,3 +8,4 @@ httpx==0.25.1
 reportlab>=4.0
 pypdf>=3.0
 qrcode[pil]>=7.0
+pyhanko==0.29.0

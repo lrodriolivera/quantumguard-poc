@@ -67,17 +67,17 @@ export class KEMController {
    */
   async decapsulate(req: Request, res: Response): Promise<void> {
     try {
-      const { ciphertext, secret_key, algorithm = 'ML-KEM-768' } = req.body;
+      const { ciphertext, keypair_id, algorithm = 'ML-KEM-768' } = req.body;
 
-      if (!ciphertext || !secret_key) {
+      if (!ciphertext || !keypair_id) {
         res.status(400).json({
           error: 'Bad Request',
-          message: 'ciphertext and secret_key are required',
+          message: 'ciphertext and keypair_id are required',
         });
         return;
       }
 
-      const result = await cryptoService.decapsulate(ciphertext, secret_key, algorithm);
+      const result = await cryptoService.decapsulate(ciphertext, keypair_id, algorithm);
 
       res.status(200).json({
         message: 'Decapsulation completed successfully',

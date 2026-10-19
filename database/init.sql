@@ -73,6 +73,19 @@ CREATE TABLE IF NOT EXISTS signatures (
     signature_size INTEGER,
     signer_cert TEXT,
     cms_signature TEXT,
+    country VARCHAR(2),
+    cert_serial VARCHAR(64),
+    issuer_cert TEXT,
+    hybrid BOOLEAN DEFAULT false,
+    classical_algorithm VARCHAR(50),
+    classical_signature TEXT,
+    classical_cert TEXT,
+    timestamp_token TEXT,
+    timestamp_time TIMESTAMP,
+    signed_pdf_path TEXT,
+    signed_pdf_hash VARCHAR(64),
+    revoked_at TIMESTAMP,
+    revocation_reason VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

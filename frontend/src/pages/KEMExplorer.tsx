@@ -33,7 +33,8 @@ const KEM_ALGORITHMS = [
 
 interface KEMState {
   publicKey: string;
-  secretKey: string;
+  keypairId: string;
+  expiresAt: string;
   ciphertext: string;
   sharedSecret1: string;
   sharedSecret2: string;
@@ -43,7 +44,7 @@ export default function KEMExplorer() {
   const [selectedAlgorithm, setSelectedAlgorithm] = useState('ML-KEM-768');
   const [step, setStep] = useState<'select' | 'keypair' | 'encapsulated' | 'verified'>('select');
   const [kemState, setKemState] = useState<KEMState>({
-    publicKey: '', secretKey: '', ciphertext: '', sharedSecret1: '', sharedSecret2: '',
+    publicKey: '', keypairId: '', expiresAt: '', ciphertext: '', sharedSecret1: '', sharedSecret2: '',
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +67,8 @@ export default function KEMExplorer() {
       setKemState(prev => ({
         ...prev,
         publicKey: result.public_key,
-        secretKey: result.secret_key,
+        keypairId: result.keypair_id,
+        expiresAt: result.expires_at,
       }));
       setStep('keypair');
     } catch (err: any) {
@@ -98,7 +100,7 @@ export default function KEMExplorer() {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await kemService.decapsulate(kemState.ciphertext, kemState.secretKey, selectedAlgorithm);
+      const result = await kemService.decapsulate(kemState.ciphertext, kemState.keypairId, selectedAlgorithm);
       setKemState(prev => ({
         ...prev,
         sharedSecret2: result.shared_secret,
@@ -113,7 +115,7 @@ export default function KEMExplorer() {
 
   const handleReset = () => {
     setStep('select');
-    setKemState({ publicKey: '', secretKey: '', ciphertext: '', sharedSecret1: '', sharedSecret2: '' });
+    setKemState({ publicKey: '', keypairId: '', expiresAt: '', ciphertext: '', sharedSecret1: '', sharedSecret2: '' });
     setError(null);
   };
 
@@ -211,11 +213,12 @@ export default function KEMExplorer() {
             <div className="bg-gray-50 rounded-lg p-3">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium text-gray-500">Clave Secreta</span>
-                <button onClick={() => copyToClipboard(kemState.secretKey, 'sk')} className="text-xs text-quantum-600 hover:text-quantum-700 flex items-center">
-                  <Copy className="w-3 h-3 mr-1" />{copied === 'sk' ? 'Copiado!' : 'Copiar'}
-                </button>
+                <span className="text-xs text-gray-400">ID {kemState.keypairId.slice(0, 8)}</span>
               </div>
-              <p className="font-mono text-xs text-gray-700 break-all">{truncate(kemState.secretKey, 80)}</p>
+              <p className="text-xs text-gray-700">
+                Se queda en el servidor y nunca viaja por la red. Caduca{' '}
+                {kemState.expiresAt && new Date(kemState.expiresAt).toLocaleTimeString('es-ES')}.
+              </p>
             </div>
           </CardContent>
         </Card>

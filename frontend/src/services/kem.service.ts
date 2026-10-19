@@ -11,8 +11,8 @@ export const kemService = {
     return response.data;
   },
 
-  async decapsulate(ciphertext: string, secretKey: string, algorithm: string = 'ML-KEM-768') {
-    const response = await api.post('/kem/decapsulate', { ciphertext, secret_key: secretKey, algorithm });
+  async decapsulate(ciphertext: string, keypairId: string, algorithm: string = 'ML-KEM-768') {
+    const response = await api.post('/kem/decapsulate', { ciphertext, keypair_id: keypairId, algorithm });
     return response.data;
   },
 
