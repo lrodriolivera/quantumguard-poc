@@ -1,9 +1,67 @@
+import JSZip from 'jszip';
 import api from './api';
 import type {
   Document,
   VerificationResult,
   ApiResponse,
 } from '../types';
+
+async function verifyBundleBytes(
+  zipBytes: ArrayBuffer
+): Promise<VerificationResult> {
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(zipBytes);
+  } catch {
+    throw new Error(
+      'El archivo no es un bundle ZIP firmado de QuantumGuard.'
+    );
+  }
+
+  const names = Object.keys(zip.files).filter(
+    (n) => !zip.files[n].dir
+  );
+  const originalName = names.find(
+    (n) => n.startsWith('original_') && !n.endsWith('.json')
+  );
+  const certName = names.find((n) => n.endsWith('_quantum_certificate.json'));
+  if (!originalName || !certName) {
+    throw new Error(
+      'El ZIP no es un bundle de firma válido (falta el documento original o el certificado).'
+    );
+  }
+
+  const certificate = JSON.parse(await zip.files[certName].async('string'));
+  const sig = certificate?.signature;
+  if (!sig?.signature_data || !sig?.public_key) {
+    throw new Error(
+      'El certificado no incluye los datos de firma (signature_data / public_key).'
+    );
+  }
+
+  const originalBlob = await zip.files[originalName].async('blob');
+  const originalFileName = originalName.slice('original_'.length);
+  const file = new File([originalBlob], originalFileName, {
+    type: 'application/octet-stream',
+  });
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('signature', sig.signature_data);
+  formData.append('publicKey', sig.public_key);
+  formData.append('algorithm', sig.algorithm || 'ML-DSA-44');
+
+  const response = await api.post<VerificationResult>(
+    '/documents/verify',
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    }
+  );
+  return response.data;
+}
 
 export const documentService = {
   async uploadDocument(file: File): Promise<{ message: string; document: Document }> {
@@ -36,22 +94,17 @@ export const documentService = {
   },
 
   async verifyDocument(documentId: string): Promise<VerificationResult> {
-    const response = await api.post<VerificationResult>('/documents/verify', {
-      documentId,
-    });
-    return response.data;
+    const blob = await this.downloadDocument(documentId);
+    return verifyBundleBytes(await blob.arrayBuffer());
   },
 
   async verifyUploadedDocument(file: File): Promise<VerificationResult> {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const response = await api.post<VerificationResult>('/documents/verify', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    return response.data;
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+      throw new Error(
+        'Sube el bundle ZIP que se descarga al firmar el documento.'
+      );
+    }
+    return verifyBundleBytes(await file.arrayBuffer());
   },
 
   async getDocument(documentId: string): Promise<any> {

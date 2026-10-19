@@ -51,7 +51,7 @@ export default function VerifyDocument() {
     setStep('upload');
   };
 
-  const isValid = result?.data?.valid;
+  const isValid = result?.valid;
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -77,14 +77,19 @@ export default function VerifyDocument() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Sube el documento firmado</CardTitle>
+              <CardTitle>Sube el bundle ZIP firmado</CardTitle>
             </CardHeader>
             <CardContent>
               <FileUpload
                 onFileSelect={handleFileSelect}
-                accept=".pdf,.doc,.docx,.txt"
+                accept=".zip"
                 maxSize={10 * 1024 * 1024}
               />
+              <p className="text-sm text-gray-500 mt-2">
+                Es el archivo <code>*_quantum_signed.zip</code> que se
+                descarga al firmar el documento (incluye el original, la firma
+                y los certificados).
+              </p>
             </CardContent>
           </Card>
 
@@ -109,9 +114,9 @@ export default function VerifyDocument() {
                     Como funciona la verificacion
                   </h4>
                   <ul className="text-sm text-blue-700 space-y-1">
-                    <li>1. Extraemos la firma digital del documento</li>
+                    <li>1. Extraemos el documento original, la firma y la clave publica del bundle</li>
                     <li>2. Verificamos la firma con el algoritmo post-cuantico</li>
-                    <li>3. Confirmamos la integridad del documento</li>
+                    <li>3. Confirmamos la integridad del documento (hash SHA-3-256)</li>
                     <li>4. Mostramos los detalles de la verificacion</li>
                   </ul>
                 </div>
@@ -175,57 +180,55 @@ export default function VerifyDocument() {
               </p>
 
               {/* Verification Details */}
-              {result.data && (
-                <div className="bg-gray-50 rounded-xl p-6 mb-6 text-left max-w-md mx-auto">
-                  <h4 className="font-medium text-gray-900 mb-4">
-                    Detalles de verificacion:
-                  </h4>
-                  <div className="space-y-3">
+              <div className="bg-gray-50 rounded-xl p-6 mb-6 text-left max-w-md mx-auto">
+                <h4 className="font-medium text-gray-900 mb-4">
+                  Detalles de verificacion:
+                </h4>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-500">Archivo:</span>
+                    <span className="font-medium text-gray-900 flex items-center">
+                      <FileText className="w-4 h-4 mr-1" />
+                      {selectedFile?.name}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-500">Algoritmo:</span>
+                    <span className="font-medium text-quantum-600">
+                      {result.algorithm}
+                    </span>
+                  </div>
+                  {result.verification_timestamp && (
                     <div className="flex items-center justify-between">
-                      <span className="text-gray-500">Archivo:</span>
-                      <span className="font-medium text-gray-900 flex items-center">
-                        <FileText className="w-4 h-4 mr-1" />
-                        {selectedFile?.name}
+                      <span className="text-gray-500">Verificado:</span>
+                      <span className="font-medium text-gray-900">
+                        {new Date(result.verification_timestamp).toLocaleString('es-ES')}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-500">Algoritmo:</span>
-                      <span className="font-medium text-quantum-600">
-                        {result.data.algorithm}
+                  )}
+                  {result.document_hash && (
+                    <div className="flex items-start justify-between">
+                      <span className="text-gray-500">Hash:</span>
+                      <span className="font-mono text-xs text-gray-700 break-all max-w-[200px] flex items-center">
+                        <Hash className="w-3 h-3 mr-1 flex-shrink-0" />
+                        {result.document_hash.slice(0, 16)}...
                       </span>
                     </div>
-                    {result.data.signedAt && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-500">Firmado:</span>
-                        <span className="font-medium text-gray-900">
-                          {new Date(result.data.signedAt).toLocaleString('es-ES')}
-                        </span>
-                      </div>
-                    )}
-                    {result.data.details?.documentHash && (
-                      <div className="flex items-start justify-between">
-                        <span className="text-gray-500">Hash:</span>
-                        <span className="font-mono text-xs text-gray-700 break-all max-w-[200px] flex items-center">
-                          <Hash className="w-3 h-3 mr-1 flex-shrink-0" />
-                          {result.data.details.documentHash.slice(0, 16)}...
-                        </span>
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-500">Quantum-Safe:</span>
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                          result.data.details?.quantumSafe
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-gray-100 text-gray-700'
-                        }`}
-                      >
-                        {result.data.details?.quantumSafe ? 'Si' : 'No'}
-                      </span>
-                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-500">Quantum-Safe:</span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                        result.quantum_safe
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      {result.quantum_safe ? 'Si' : 'No'}
+                    </span>
                   </div>
                 </div>
-              )}
+              </div>
 
               <Button onClick={handleVerifyAnother} variant="primary">
                 Verificar Otro Documento

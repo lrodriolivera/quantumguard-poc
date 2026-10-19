@@ -81,18 +81,13 @@ export interface SignatureResult {
 }
 
 export interface VerificationResult {
-  success: boolean;
   message: string;
-  data: {
-    valid: boolean;
-    algorithm: string;
-    signedAt: string;
-    details: {
-      documentHash: string;
-      signatureValid: boolean;
-      quantumSafe: boolean;
-    };
-  };
+  valid: boolean;
+  document_hash: string;
+  algorithm: string;
+  verification_timestamp: string;
+  quantum_safe: boolean;
+  details: Record<string, string>;
 }
 
 // Stats types
