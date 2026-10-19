@@ -12,6 +12,8 @@ import {
   Profile,
   KEMExplorer,
   SignLink,
+  TermsOfUse,
+  PrivacyPolicy,
 } from './pages';
 
 function App() {
@@ -29,6 +31,8 @@ function App() {
           <Route element={<Layout />}>
             {/* Public home */}
             <Route path="/" element={<Home />} />
+            <Route path="/terminos" element={<TermsOfUse />} />
+            <Route path="/privacidad" element={<PrivacyPolicy />} />
 
             {/* Protected routes */}
             <Route

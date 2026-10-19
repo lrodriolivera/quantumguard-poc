@@ -1,4 +1,4 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, Link } from 'react-router-dom';
 import Header from './Header';
 
 export default function Layout() {
@@ -17,6 +17,14 @@ export default function Layout() {
             <p className="text-gray-400 text-sm mt-2 md:mt-0">
               Firmas digitales post-cuanticas seguras con ML-DSA (Dilithium)
             </p>
+          </div>
+          <div className="flex justify-center md:justify-start gap-4 mt-4 pt-4 border-t border-gray-100">
+            <Link to="/terminos" className="text-gray-400 hover:text-gray-600 text-xs">
+              Términos de Uso
+            </Link>
+            <Link to="/privacidad" className="text-gray-400 hover:text-gray-600 text-xs">
+              Política de Privacidad
+            </Link>
           </div>
         </div>
       </footer>
