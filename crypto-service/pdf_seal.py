@@ -47,7 +47,7 @@ def _create_seal_overlay(
     signature_id: str,
     oid: str = "",
     nist_standard: str = "",
-    verify_url: str = "https://quantumguard.ai/verify",
+    verify_base_url: str = "https://app.postcuantica.io/verificar",
 ) -> io.BytesIO:
     """
     Create a PDF page with only the visual seal overlay.
@@ -116,7 +116,7 @@ def _create_seal_overlay(
     c.drawCentredString(badge_x + 18.5 * mm, badge_y + 2 * mm, "QUANTUM-SAFE | 50+ YEARS")
 
     # QR Code
-    qr_data = f"{verify_url}?id={signature_id}&hash={document_hash[:16]}"
+    qr_data = f"{verify_base_url}/{signature_id}?hash={document_hash[:16]}"
     qr_buf = _generate_qr(qr_data, size=100)
     qr_img = ImageReader(qr_buf)
     qr_size = 15 * mm
@@ -154,6 +154,7 @@ def add_seal_to_pdf(
     signature_id: str,
     oid: str = "",
     nist_standard: str = "",
+    verify_base_url: str = "https://app.postcuantica.io/verificar",
 ) -> bytes:
     """
     Add a visual quantum signature seal to a PDF document.
@@ -182,6 +183,7 @@ def add_seal_to_pdf(
                     signature_id=signature_id,
                     oid=oid,
                     nist_standard=nist_standard,
+                    verify_base_url=verify_base_url,
                 )
                 seal_reader = PdfReader(seal_pdf)
                 page.merge_page(seal_reader.pages[0])

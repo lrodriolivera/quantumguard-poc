@@ -46,8 +46,8 @@ app = FastAPI(
     version="2.0.0",
     contact={
         "name": "QuantumGuard AI",
-        "url": "https://quantumguard.ai",
-        "email": "support@quantumguard.ai"
+        "url": "https://postcuantica.io",
+        "email": "info@postcuantica.io"
     },
     license_info={
         "name": "MIT",
@@ -762,6 +762,14 @@ async def sign_document_x509(
     signer_email: Optional[str] = Form(default=None, description="Signer email (certificate SAN)"),
     country: Optional[str] = Form(default=None, description="Issuing CA country: CL, CO or ES"),
     hybrid: Optional[str] = Form(default=None, description="Also sign with ECDSA P-256 (default true)"),
+    previous_signed_pdf: Optional[UploadFile] = File(
+        default=None,
+        description="PDF already signed by an earlier envelope signer — this signer's signature is "
+                    "stacked on top via an incremental update instead of starting a fresh seal",
+    ),
+    signer_index: Optional[str] = Form(
+        default=None, description="1-based position of this signer within the envelope (keeps PDF signature field names unique)"
+    ),
 ):
     """
     Sign a document with CA-certified keys bound to the signer's identity.
@@ -780,7 +788,13 @@ async def sign_document_x509(
 
     try:
         pdf_to_embed = None
-        if _is_pdf(document_bytes):
+        if previous_signed_pdf is not None:
+            # Stack this signature on top of an earlier signer's already-signed PDF via a pure
+            # incremental update. Re-running the visual seal here would require rewriting the file
+            # with pypdf, which is not incremental-aware and would invalidate the earlier signer's
+            # signature byte ranges — so later signers get the CMS signature but not another seal.
+            pdf_to_embed = await previous_signed_pdf.read()
+        elif _is_pdf(document_bytes):
             meta = crypto_service.get_metadata(canonical)
             now = datetime.now(timezone.utc)
             pdf_to_embed = pdf_seal.add_seal_to_pdf(
@@ -794,6 +808,7 @@ async def sign_document_x509(
                 signature_id=signature_id,
                 oid=pki_module.ALGORITHMS[canonical].oid,
                 nist_standard=meta.get('standard', ''),
+                verify_base_url=f"{os.environ.get('PKI_PUBLIC_BASE_URL', 'https://app.postcuantica.io').rstrip('/')}/verificar",
             )
         result = pki_module.sign_document_full(
             document_bytes=document_bytes,
@@ -803,6 +818,7 @@ async def sign_document_x509(
             country=issuing_country,
             hybrid=is_hybrid,
             pdf_to_embed=pdf_to_embed,
+            pdf_field_suffix=f"-{signer_index}" if signer_index else "",
         )
         if not crypto_service.verify_raw(
             document_bytes, result["signature_raw"], result["public_key_raw"], canonical,

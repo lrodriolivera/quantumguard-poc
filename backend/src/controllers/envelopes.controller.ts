@@ -133,6 +133,13 @@ export class EnvelopesController {
         res.status(409).json({ error: 'Conflict', message: 'Document file not available for signing' });
         return;
       }
+      if (document.mime_type !== 'application/pdf') {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'El documento debe ser un PDF para enviarlo a firmar por sobre.',
+        });
+        return;
+      }
 
       const envelope = await Envelope.create({
         document_id: document.id,
@@ -278,6 +285,38 @@ export class EnvelopesController {
       });
     } catch (error) {
       handleError(res, error, 'Failed to load signing link');
+    }
+  }
+
+  /** GET /api/sign/:token/document — lets the signer review the document before/while signing. */
+  async getPublicDocument(req: Request, res: Response): Promise<void> {
+    try {
+      const signer = await findSignerByToken(req.params.token);
+      if (!signer || !signer.envelope?.document) {
+        res.status(404).json({ error: 'Not Found', message: 'Invalid signing link' });
+        return;
+      }
+      if (signer.envelope.status === 'voided') {
+        res.status(410).json({ error: 'Gone', message: 'This signing request was cancelled' });
+        return;
+      }
+      if (signer.isAccessTokenExpired) {
+        res.status(410).json({ error: 'Gone', message: 'This signing link has expired' });
+        return;
+      }
+
+      const document = signer.envelope.document;
+      if (!document.original_path) {
+        res.status(404).json({ error: 'Not Found', message: 'Document file not available' });
+        return;
+      }
+      const fileBuffer = await storageService.loadFilePath(document.original_path);
+
+      res.setHeader('Content-Type', document.mime_type);
+      res.setHeader('Content-Disposition', `inline; filename="${document.filename}"`);
+      res.send(fileBuffer);
+    } catch (error) {
+      handleError(res, error, 'Failed to load document');
     }
   }
 
@@ -429,24 +468,43 @@ export class EnvelopesController {
       }
       await assertWithinSignatureQuota(owner.id, owner.plan);
 
+      // Multi-signer envelopes: stack this signature onto the most recently signed sibling's
+      // PDF (if any) instead of starting over from the original, so the final PDF ends up with
+      // everyone's signatures embedded rather than one PDF per signer.
+      const alreadySignedSiblingIds = siblings
+        .filter((s) => s.id !== signer.id && s.status === 'signed' && s.signature_id)
+        .map((s) => s.signature_id as string);
+      let chain: { previousSignedPdf: Buffer; signerIndex: number } | undefined;
+      if (alreadySignedSiblingIds.length > 0) {
+        const previousSignatures = await Signature.findAll({
+          where: { id: alreadySignedSiblingIds },
+          order: [['timestamp', 'DESC']],
+        });
+        const latest = previousSignatures.find((s) => s.signed_pdf_path);
+        if (latest?.signed_pdf_path) {
+          chain = {
+            previousSignedPdf: await storageService.loadFilePath(latest.signed_pdf_path),
+            signerIndex: alreadySignedSiblingIds.length + 1,
+          };
+        }
+      }
+
       const signed = await cryptoService.signDocumentX509(
         fileBuffer,
         document.filename,
         envelope.algorithm,
         { name: signer.name, email: signer.email },
         { country: envelope.country, hybrid: envelope.hybrid },
+        chain,
       );
       if (signed.document_hash !== document.file_hash) {
         throw new Error('Crypto service signed content that differs from the stored document');
       }
 
       let signedPdf: { filePath: string; hash: string } | null = null;
-      if (signed.signed_pdf) {
-        signedPdf = await storageService.saveFile(
-          owner.id,
-          Buffer.from(signed.signed_pdf, 'base64'),
-          signedPdfName(document.filename),
-        );
+      const signedPdfBuffer = signed.signed_pdf ? Buffer.from(signed.signed_pdf, 'base64') : null;
+      if (signedPdfBuffer) {
+        signedPdf = await storageService.saveFile(owner.id, signedPdfBuffer, signedPdfName(document.filename));
       }
 
       const signature = await Signature.create({
@@ -486,14 +544,21 @@ export class EnvelopesController {
       const stillPending = siblings.some((s) => s.id !== signer.id && s.status !== 'signed');
       if (!stillPending) {
         await envelope.update({ status: 'completed', completed_at: new Date() });
-        try {
-          await emailService.sendEnvelopeCompleted({
-            to: owner.email,
-            ownerName: owner.fullName,
-            documentName: document.filename,
-          });
-        } catch (notifyError) {
-          console.warn('Envelope-completed email failed (envelope still marks completed):', notifyError);
+        const recipients = new Map<string, string>([[owner.email.toLowerCase(), owner.fullName]]);
+        for (const s of siblings) {
+          if (!recipients.has(s.email.toLowerCase())) recipients.set(s.email.toLowerCase(), s.name);
+        }
+        for (const [email, name] of recipients) {
+          try {
+            await emailService.sendEnvelopeCompleted({
+              to: email,
+              recipientName: name,
+              documentName: document.filename,
+              signedPdf: signedPdfBuffer ?? undefined,
+            });
+          } catch (notifyError) {
+            console.warn('Envelope-completed email failed (envelope still marks completed):', notifyError);
+          }
         }
       } else if (envelope.mode === 'sequential') {
         const next = siblings

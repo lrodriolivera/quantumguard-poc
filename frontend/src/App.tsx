@@ -12,6 +12,7 @@ import {
   Profile,
   KEMExplorer,
   SignLink,
+  VerifyQR,
   TermsOfUse,
   PrivacyPolicy,
 } from './pages';
@@ -26,6 +27,8 @@ function App() {
           <Route path="/register" element={<Register />} />
           {/* Signer link: no account, no app chrome */}
           <Route path="/firmar/:token" element={<SignLink />} />
+          {/* QR verification link embedded in signed PDFs: no account, no app chrome */}
+          <Route path="/verificar/:signatureId" element={<VerifyQR />} />
 
           {/* Routes with Layout */}
           <Route element={<Layout />}>

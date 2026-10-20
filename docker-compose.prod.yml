@@ -46,7 +46,7 @@ services:
     restart: always
     environment:
       - PYTHONUNBUFFERED=1
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://quantumguard.ai}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://app.postcuantica.io}
       # CA key lives on this volume: back it up. Set to false once the CA exists so a
       # lost volume fails loudly instead of silently minting a new CA.
       - PKI_AUTO_INIT_CA=${PKI_AUTO_INIT_CA:-true}

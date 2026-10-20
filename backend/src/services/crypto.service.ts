@@ -355,6 +355,8 @@ export class CryptoService {
     algorithm: string,
     signer: { name: string; email: string },
     options: { country: string; hybrid: boolean },
+    /** Multi-signer envelopes: stack this signature onto an earlier signer's already-signed PDF. */
+    chain?: { previousSignedPdf: Buffer; signerIndex: number },
   ): Promise<X509SignatureResponse> {
     return this.withRetry(async () => {
       const formData = new FormData();
@@ -364,6 +366,10 @@ export class CryptoService {
       formData.append('signer_email', signer.email);
       formData.append('country', options.country);
       formData.append('hybrid', String(options.hybrid));
+      if (chain) {
+        formData.append('previous_signed_pdf', chain.previousSignedPdf, { filename: 'previous-signed.pdf' });
+        formData.append('signer_index', String(chain.signerIndex));
+      }
 
       const response = await this.client.post('/crypto/sign-x509', formData, {
         headers: formData.getHeaders(),

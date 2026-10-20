@@ -386,6 +386,54 @@ export class DocumentsController {
   }
 
   /**
+   * Public QR-code verification — no account, no re-uploading the file. The QR embedded in a
+   * signed PDF's seal links here with the signature id and a hash prefix; this re-runs the same
+   * cryptographic check as verifyPdf against our own stored copy of the signed file.
+   * GET /api/documents/verify/:signatureId?hash=...
+   */
+  async verifyBySignatureId(req: Request, res: Response): Promise<void> {
+    try {
+      const hashPrefix = String(req.query.hash || '');
+      if (!hashPrefix) {
+        res.status(400).json({ error: 'Bad Request', message: 'Missing hash query parameter' });
+        return;
+      }
+
+      const signature = await Signature.findByPk(req.params.signatureId);
+      if (!signature || !signature.document_hash.startsWith(hashPrefix)) {
+        res.status(404).json({ error: 'Not Found', message: 'Signature not found' });
+        return;
+      }
+      if (!signature.signed_pdf_path) {
+        res.status(404).json({ error: 'Not Found', message: 'Signed document not available' });
+        return;
+      }
+      const document = await Document.findByPk(signature.document_id);
+      if (!document) {
+        res.status(404).json({ error: 'Not Found', message: 'Document not found' });
+        return;
+      }
+
+      const fileBuffer = await storageService.loadFilePath(signature.signed_pdf_path);
+      const result = await cryptoService.verifyPdf(fileBuffer, document.filename);
+      res.status(200).json({
+        filename: document.filename,
+        ...buildPdfVerificationResult(result, {
+          revokedAt: signature.revoked_at,
+          revocationReason: signature.revocation_reason,
+        }),
+      });
+    } catch (error: any) {
+      if (error instanceof CryptoInputError) {
+        res.status(400).json({ error: 'Bad Request', message: error.message });
+        return;
+      }
+      console.error('Verify by signature id error:', error);
+      res.status(500).json({ error: 'Internal Server Error', message: 'Failed to verify signature' });
+    }
+  }
+
+  /**
    * Revoke one of the caller's signatures
    * POST /api/documents/:id/signatures/:signatureId/revoke
    */

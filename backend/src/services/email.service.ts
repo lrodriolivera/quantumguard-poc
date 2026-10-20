@@ -7,6 +7,7 @@
  */
 
 import { Resend } from 'resend';
+import { signedPdfName } from './bundle.service';
 
 const API_KEY = process.env.RESEND_API_KEY || '';
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'QuantumGuard <firmas@postcuantica.io>';
@@ -25,9 +26,20 @@ function getClient(): Resend {
   return client;
 }
 
-async function send(to: string, subject: string, html: string): Promise<void> {
+async function send(
+  to: string,
+  subject: string,
+  html: string,
+  attachment?: { filename: string; content: Buffer },
+): Promise<void> {
   const resend = getClient();
-  const { error } = await resend.emails.send({ from: FROM_EMAIL, to, subject, html });
+  const { error } = await resend.emails.send({
+    from: FROM_EMAIL,
+    to,
+    subject,
+    html,
+    attachments: attachment ? [{ filename: attachment.filename, content: attachment.content }] : undefined,
+  });
   if (error) throw new Error(`Resend error: ${error.message}`);
 }
 
@@ -86,14 +98,22 @@ export const emailService = {
     await this.sendSignerInvite(params);
   },
 
-  async sendEnvelopeCompleted(params: { to: string; ownerName: string; documentName: string }): Promise<void> {
+  async sendEnvelopeCompleted(params: {
+    to: string;
+    recipientName: string;
+    documentName: string;
+    signedPdf?: Buffer;
+  }): Promise<void> {
+    const bodyText = params.signedPdf
+      ? `Hola ${escapeHtml(params.recipientName)}, todos los firmantes de
+        <strong>${escapeHtml(params.documentName)}</strong> ya firmaron. Adjunto va el documento firmado.`
+      : `Hola ${escapeHtml(params.recipientName)}, todos los firmantes de
+        <strong>${escapeHtml(params.documentName)}</strong> ya firmaron. Puedes descargar el documento firmado desde QuantumGuard.`;
     await send(
       params.to,
       `Todos firmaron "${params.documentName}"`,
-      layout('Documento completamente firmado', `
-        <p style="font-size:14px;color:#444;line-height:1.5;">Hola ${escapeHtml(params.ownerName)}, todos los firmantes de
-        <strong>${escapeHtml(params.documentName)}</strong> ya firmaron. Puedes descargar el documento firmado desde QuantumGuard.</p>
-      `),
+      layout('Documento completamente firmado', `<p style="font-size:14px;color:#444;line-height:1.5;">${bodyText}</p>`),
+      params.signedPdf ? { filename: signedPdfName(params.documentName), content: params.signedPdf } : undefined,
     );
   },
 };

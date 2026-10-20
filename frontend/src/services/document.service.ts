@@ -137,6 +137,15 @@ export const documentService = {
     return verifyBundleBytes(await file.arrayBuffer());
   },
 
+  /** Public QR-code verification — no account, no re-uploading the file. */
+  async verifyBySignatureId(signatureId: string, hash: string): Promise<VerificationResult> {
+    const response = await api.get<VerificationResult>(
+      `/documents/verify/${signatureId}`,
+      { params: { hash } }
+    );
+    return response.data;
+  },
+
   async revokeLatestSignature(documentId: string, reason: string): Promise<void> {
     const detail = await api.get(`/documents/${documentId}`);
     const latest = detail.data?.signatures?.[0];

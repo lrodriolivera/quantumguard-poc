@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { Shield, Mail, CheckCircle, XCircle, FileText, Clock } from 'lucide-react';
 import { signLinkService } from '../services/envelope.service';
 import { Card, CardContent, CardHeader, CardTitle, Button, Input, Alert, Spinner } from '../components/ui';
@@ -9,6 +9,7 @@ type Step = 'loading' | 'error' | 'otp' | 'confirm' | 'signed' | 'declined';
 
 export default function SignLink() {
   const { token = '' } = useParams<{ token: string }>();
+  const documentUrl = `${import.meta.env.VITE_API_URL || '/api'}/sign/${token}/document`;
   const [step, setStep] = useState<Step>('loading');
   const [info, setInfo] = useState<PublicSignerInfo | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -18,6 +19,7 @@ export default function SignLink() {
   const [verifying, setVerifying] = useState(false);
   const [signing, setSigning] = useState(false);
   const [declining, setDeclining] = useState(false);
+  const [envelopeStatus, setEnvelopeStatus] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -76,7 +78,8 @@ export default function SignLink() {
     setSigning(true);
     setErrorMessage(null);
     try {
-      await signLinkService.sign(token);
+      const result = await signLinkService.sign(token);
+      setEnvelopeStatus(result.envelope_status);
       setStep('signed');
     } catch (err) {
       setErrorMessage(describeLinkError(err));
@@ -137,9 +140,19 @@ export default function SignLink() {
           </CardHeader>
           <CardContent>
             <div className="bg-gray-50 rounded-xl p-4 mb-5 space-y-2">
-              <div className="flex items-center text-sm text-gray-700">
-                <FileText className="w-4 h-4 mr-2 text-gray-400" />
-                <span className="font-medium">{info.document.filename}</span>
+              <div className="flex items-center justify-between text-sm text-gray-700">
+                <span className="flex items-center">
+                  <FileText className="w-4 h-4 mr-2 text-gray-400" />
+                  <span className="font-medium">{info.document.filename}</span>
+                </span>
+                <a
+                  href={documentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-quantum-600 hover:text-quantum-700 font-medium text-sm"
+                >
+                  Ver documento
+                </a>
               </div>
               <p className="text-sm text-gray-500">
                 {info.owner_name} te invitó a firmar este documento.
@@ -227,8 +240,21 @@ export default function SignLink() {
               <CheckCircle className="w-14 h-14 text-green-500 mx-auto mb-4" />
               <h2 className="text-lg font-semibold text-gray-900 mb-2">Documento firmado</h2>
               <p className="text-gray-600 text-sm">
-                Tu firma quedó registrada con QuantumGuard. Ya puedes cerrar esta página.
+                {(envelopeStatus ?? info?.envelope.status) === 'completed'
+                  ? 'Tu firma quedó registrada con QuantumGuard. Como ya firmaron todos, te enviamos el documento firmado a tu correo.'
+                  : 'Tu firma quedó registrada con QuantumGuard. Cuando los demás firmantes terminen de firmar, te enviaremos el documento completo por correo.'}
               </p>
+              <div className="mt-6 pt-6 border-t border-gray-100">
+                <p className="text-sm text-gray-600 mb-3">
+                  Crea tu cuenta gratis para ver tus firmas
+                </p>
+                <Link
+                  to="/register"
+                  className="inline-flex items-center justify-center font-medium rounded-lg border-2 border-quantum-600 text-quantum-600 hover:bg-quantum-50 px-4 py-2 text-sm"
+                >
+                  Crear cuenta gratis
+                </Link>
+              </div>
             </div>
           </CardContent>
         </Card>

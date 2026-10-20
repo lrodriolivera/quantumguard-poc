@@ -74,6 +74,11 @@ router.post('/verify', verifyLimiter, upload.single('file'), (req, res) =>
   documentsController.verifySignature(req, res)
 );
 
+// GET /api/documents/verify/:signatureId - QR-code verification, no file re-upload
+router.get('/verify/:signatureId', verifyLimiter, (req, res) =>
+  documentsController.verifyBySignatureId(req, res)
+);
+
 // POST /api/documents/verify-pdf - Verify the signatures embedded in a signed PDF
 router.post('/verify-pdf', verifyLimiter, upload.single('file'), (req, res) =>
   documentsController.verifyPdf(req, res)

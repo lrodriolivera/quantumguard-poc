@@ -8,5 +8,6 @@ export { default as Documents } from './Documents';
 export { default as Profile } from './Profile';
 export { default as KEMExplorer } from './KEMExplorer';
 export { default as SignLink } from './SignLink';
+export { default as VerifyQR } from './VerifyQR';
 export { default as TermsOfUse } from './TermsOfUse';
 export { default as PrivacyPolicy } from './PrivacyPolicy';

@@ -12,6 +12,9 @@ const router = Router();
 // GET /api/sign/:token - Load the document/signer info for this link
 router.get('/:token', publicSignLimiter, (req, res) => envelopesController.getPublicSigner(req, res));
 
+// GET /api/sign/:token/document - Review the document before/while signing
+router.get('/:token/document', publicSignLimiter, (req, res) => envelopesController.getPublicDocument(req, res));
+
 // POST /api/sign/:token/otp - Request a fresh verification code by email
 router.post('/:token/otp', otpLimiter, (req, res) => envelopesController.requestOtp(req, res));
 

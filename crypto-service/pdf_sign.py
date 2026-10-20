@@ -67,20 +67,26 @@ def _cms_single_signer(content: bytes, key: str, cert: str, issuer_cert: str, di
 
 
 def sign_pdf(pdf: bytes, signer_name: str, pq: dict, classical: Optional[dict], issuer_cert: str,
-             digest: str, tmpdir: str) -> bytes:
-    """pq / classical: {"key": path, "cert": path} of the ephemeral signer keys."""
+             digest: str, tmpdir: str, field_suffix: str = "") -> bytes:
+    """pq / classical: {"key": path, "cert": path} of the ephemeral signer keys.
+
+    field_suffix keeps signature field names unique when stacking several
+    signers' signatures onto the same PDF via incremental updates (multi-signer
+    envelopes) — otherwise the second signer's fields would collide with the
+    first signer's.
+    """
     pdf = _embed(
-        pdf, "QuantumGuard-PQC",
+        pdf, f"QuantumGuard-PQC{field_suffix}",
         lambda data: _cms_single_signer(data, pq["key"], pq["cert"], issuer_cert, digest, tmpdir),
         name=signer_name,
     )
     if classical:
         pdf = _embed(
-            pdf, "QuantumGuard-ECDSA",
+            pdf, f"QuantumGuard-ECDSA{field_suffix}",
             lambda data: _cms_single_signer(data, classical["key"], classical["cert"], issuer_cert, "sha256", tmpdir),
             name=signer_name,
         )
-    return _embed(pdf, "QuantumGuard-TSA", lambda data: tsa.create_timestamp(data)["token"], timestamp=True)
+    return _embed(pdf, f"QuantumGuard-TSA{field_suffix}", lambda data: tsa.create_timestamp(data)["token"], timestamp=True)
 
 
 def _signatures_in(pdf: bytes) -> List[dict]:

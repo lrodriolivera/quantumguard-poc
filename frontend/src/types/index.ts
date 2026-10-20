@@ -158,6 +158,7 @@ export interface VerificationSigner {
 export interface VerificationResult {
   message: string;
   valid: boolean;
+  filename?: string;
   document_hash: string;
   algorithm: string;
   verification_timestamp: string;

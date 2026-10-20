@@ -299,6 +299,7 @@ def sign_document_full(
     country: str = ca_module.DEFAULT_COUNTRY,
     hybrid: bool = True,
     pdf_to_embed: Optional[bytes] = None,
+    pdf_field_suffix: str = "",
 ) -> dict:
     canonical = canonical_algorithm(algorithm)
     spec = ALGORITHMS[canonical]
@@ -346,6 +347,7 @@ def sign_document_full(
             signed_pdf = pdf_sign.sign_pdf(
                 pdf_to_embed, sanitize_common_name(signer_name),
                 {"key": pq_key, "cert": pq_crt}, ec_paths, issuer.cert_path, spec.cms_digest, tmpdir,
+                field_suffix=pdf_field_suffix,
             )
     # Ephemeral signer private keys are gone with tmpdir.
 

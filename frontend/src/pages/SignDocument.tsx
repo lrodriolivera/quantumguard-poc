@@ -103,7 +103,8 @@ export default function SignDocument() {
   const validSigners = signers
     .map((s) => ({ name: s.name.trim(), email: s.email.trim(), phone: s.phone?.trim() || undefined }))
     .filter((s) => s.name && s.email);
-  const canInvite = signerMode === 'self' || validSigners.length > 0;
+  const isPdf = selectedFile?.type === 'application/pdf';
+  const canInvite = signerMode === 'self' || (validSigners.length > 0 && isPdf);
 
   const addSignerRow = () => setSigners((rows) => [...rows, { name: '', email: '', phone: '' }]);
   const removeSignerRow = (index: number) =>
@@ -388,6 +389,12 @@ export default function SignDocument() {
                       {envelopeError && (
                         <Alert variant="error" onClose={() => setEnvelopeError(null)}>
                           {envelopeError}
+                        </Alert>
+                      )}
+                      {!isPdf && (
+                        <Alert variant="error">
+                          Para invitar a otras personas a firmar, el documento debe ser un PDF. Vuelve al paso 1 y
+                          sube el archivo en ese formato.
                         </Alert>
                       )}
                       <div className="space-y-3">
