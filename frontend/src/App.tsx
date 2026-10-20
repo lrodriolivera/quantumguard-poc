@@ -1,8 +1,10 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { CountryProvider } from './context/CountryContext';
 import { Layout, ProtectedRoute } from './components/layout';
 import {
   Home,
+  CountryLanding,
   Login,
   Register,
   Dashboard,
@@ -19,8 +21,9 @@ import {
 
 function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
+    <CountryProvider>
+      <AuthProvider>
+        <BrowserRouter>
         <Routes>
           {/* Public routes */}
           <Route path="/login" element={<Login />} />
@@ -32,8 +35,11 @@ function App() {
 
           {/* Routes with Layout */}
           <Route element={<Layout />}>
-            {/* Public home */}
+            {/* Country picker — always shown at / */}
             <Route path="/" element={<Home />} />
+            {/* Country-specific landing pages ("portada") */}
+            <Route path="/cl" element={<CountryLanding country="CL" />} />
+            <Route path="/co" element={<CountryLanding country="CO" />} />
             <Route path="/terminos" element={<TermsOfUse />} />
             <Route path="/privacidad" element={<PrivacyPolicy />} />
 
@@ -96,8 +102,9 @@ function App() {
             />
           </Route>
         </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+        </BrowserRouter>
+      </AuthProvider>
+    </CountryProvider>
   );
 }
 

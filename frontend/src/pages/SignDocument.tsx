@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { PenTool, Shield, CheckCircle, FileText, Clock, Globe, Layers, Users, Plus, X, Mail } from 'lucide-react';
 import { useDocuments } from '../hooks/useDocuments';
 import { envelopeService } from '../services/envelope.service';
-import type { SignatureCountry, Envelope, EnvelopeSignerInput } from '../types';
+import { useCountry } from '../context/CountryContext';
+import CountryPicker from '../components/country/CountryPicker';
+import type { Envelope, EnvelopeSignerInput } from '../types';
 import {
   Card,
   CardContent,
@@ -69,16 +71,15 @@ const ALGORITHMS = [
   },
 ];
 
-const COUNTRIES: { code: SignatureCountry; name: string; ca: string }[] = [
-  { code: 'CL', name: 'Chile', ca: 'QuantumGuard CA Chile' },
-  { code: 'CO', name: 'Colombia', ca: 'QuantumGuard CA Colombia' },
-  { code: 'ES', name: 'España', ca: 'QuantumGuard CA España' },
-];
+const CA_NAMES: Record<string, string> = {
+  CL: 'QuantumGuard CA Chile',
+  CO: 'QuantumGuard CA Colombia',
+};
 
 export default function SignDocument() {
+  const { country } = useCountry();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedAlgorithm, setSelectedAlgorithm] = useState(ALGORITHMS[0].id);
-  const [country, setCountry] = useState<SignatureCountry>('CL');
   const [hybrid, setHybrid] = useState(true);
   const [signerMode, setSignerMode] = useState<'self' | 'invite'>('self');
   const [signers, setSigners] = useState<EnvelopeSignerInput[]>([{ name: '', email: '', phone: '' }]);
@@ -113,7 +114,7 @@ export default function SignDocument() {
     setSigners((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
 
   const handleSign = async () => {
-    if (!selectedFile) return;
+    if (!selectedFile || !country) return;
 
     setStep('signing');
     clearError();
@@ -170,6 +171,20 @@ export default function SignDocument() {
     setStep('upload');
     clearError();
   };
+
+  if (!country) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-8 text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Elige tu país para firmar</h1>
+          <p className="text-gray-600">
+            El certificado y la ley aplicable dependen del país. Elige uno para continuar.
+          </p>
+        </div>
+        <CountryPicker navigateToLanding={false} />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -301,34 +316,16 @@ export default function SignDocument() {
                   <CardTitle>3. Jurisdicción y modo de firma</CardTitle>
                 </CardHeader>
                 <CardContent className="py-0 space-y-5">
-                  <fieldset>
-                    <legend className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 flex items-center">
-                      <Globe className="w-4 h-4 mr-1" /> País del certificado
-                    </legend>
-                    <div className="grid grid-cols-3 gap-3">
-                      {COUNTRIES.map((c) => (
-                        <label
-                          key={c.code}
-                          className={`cursor-pointer rounded-xl border-2 p-3 text-center transition-colors focus-within:ring-2 focus-within:ring-quantum-400 ${
-                            country === c.code
-                              ? 'border-quantum-500 bg-quantum-50'
-                              : 'border-gray-200 hover:border-gray-300'
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="country"
-                            value={c.code}
-                            checked={country === c.code}
-                            onChange={() => setCountry(c.code)}
-                            className="sr-only"
-                          />
-                          <span className="block font-semibold text-gray-900">{c.name}</span>
-                          <span className="block text-xs text-gray-500 mt-1">{c.ca}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
+                  <div className="flex items-center justify-between rounded-xl border border-gray-200 p-4 bg-gray-50">
+                    <span className="flex items-center text-sm text-gray-700">
+                      <Globe className="w-4 h-4 mr-2 text-gray-400" />
+                      Certificado emitido por{' '}
+                      <span className="font-semibold text-gray-900 ml-1">
+                        {country ? CA_NAMES[country] : 'QuantumGuard CA'}
+                      </span>
+                    </span>
+                    <span className="text-xs text-gray-400">Se elige arriba, en el selector de país</span>
+                  </div>
 
                   <label className="flex items-start space-x-3 cursor-pointer rounded-xl border border-gray-200 p-4 hover:border-gray-300">
                     <input
@@ -526,7 +523,7 @@ export default function SignDocument() {
                   <div className="flex items-center justify-between">
                     <span className="text-gray-500">CA emisora:</span>
                     <span className="font-medium text-gray-900">
-                      {COUNTRIES.find((c) => c.code === country)?.ca}
+                      {country ? CA_NAMES[country] : ''}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">

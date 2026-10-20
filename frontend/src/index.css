@@ -13,6 +13,45 @@
   --color-quantum-800: #064b86;
   --color-quantum-900: #0b406f;
   --color-quantum-950: #07294a;
+
+  /* Chile — built from the flag's own officially-documented colors: blue #0039A6, red #D52B1E
+     (FIAV-referenced; chilean law doesn't fix an exact shade, but these are the standard
+     reproduction values). Blue carries the brand; red is the flag's other dominant field,
+     used as a deliberate accent rather than hidden away. */
+  --color-cl-50: #eef3fc;
+  --color-cl-100: #d7e6f9;
+  --color-cl-200: #aecdf3;
+  --color-cl-300: #7fabe6;
+  --color-cl-400: #4f87d4;
+  --color-cl-500: #2d66bb;
+  --color-cl-600: #1a4a9e;
+  --color-cl-700: #0039a6;
+  --color-cl-800: #082c7d;
+  --color-cl-900: #0a2058;
+  --color-cl-950: #061332;
+  --color-cl-accent: #d52b1e;
+
+  /* Colombia — built from the flag's own officially-documented colors: yellow #FFCD00
+     (Pantone 116), blue #003087 (Pantone 287), red #C8102E (Pantone 186), per the FIAV
+     Flags & Anthems Manual. Yellow is the flag's dominant field (half the area) and carries
+     the brand accent; the darker "ink" shades come from the flag's blue, not from darkening
+     yellow itself — darkened yellow reads as mud, not as gold. */
+  --color-co-50: #fef9e3;
+  --color-co-100: #fcefae;
+  --color-co-200: #fbe172;
+  --color-co-300: #fdd43e;
+  --color-co-400: #ffcd00;
+  --color-co-500: #d6ac00;
+  --color-co-600: #a98700;
+  --color-co-700: #7d6300;
+  --color-co-800: #574500;
+  --color-co-900: #3a2e00;
+  --color-co-950: #241d00;
+  --color-co-accent: #c8102e;
+  --color-co-ink-700: #163a7d;
+  --color-co-ink-800: #0f2a5c;
+  --color-co-ink-900: #0a1d40;
+  --color-co-ink-950: #061227;
 }
 
 /* Base styles */
