@@ -12,7 +12,7 @@ export default function Layout() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <p className="text-gray-500 text-sm">
-              &copy; 2025 QuantumGuard AI - RYP Cloud. Todos los derechos reservados.
+              &copy; 2026 QuantumGuard AI - Postcuantica. Todos los derechos reservados.
             </p>
             <p className="text-gray-400 text-sm mt-2 md:mt-0">
               Firmas digitales post-cuanticas seguras con ML-DSA (Dilithium)

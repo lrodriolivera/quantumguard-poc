@@ -25,7 +25,7 @@ git --version     # 2.0 o superior
 ### Paso 1: Clonar el Repositorio
 
 ```bash
-cd "/home/rypcloud/Documentos/Computacion Cuantica"
+cd ~/proyectos
 cd quantumguard-poc
 ```
 

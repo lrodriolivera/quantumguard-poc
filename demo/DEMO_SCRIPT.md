@@ -149,6 +149,6 @@ Usar los documentos en `demo/documents/`:
 
 ## Contacto Post-Demo
 
-- Email: info@rypcloud.com
-- Web: quantumguard.ai
-- GitHub: github.com/rypcloud/quantumguard
+- Email: info@postcuantica.io
+- Web: app.postcuantica.io
+- GitHub: github.com/lrodriolivera/quantumguard-poc

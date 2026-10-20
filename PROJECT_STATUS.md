@@ -165,7 +165,7 @@ quantumguard-poc/
 
 ```bash
 # 1. Ir al proyecto
-cd "/home/rypcloud/Documentos/Computacion Cuantica/quantumguard-poc"
+cd ~/proyectos/quantumguard-poc
 
 # 2. Levantar servicios base
 docker-compose up -d postgres redis

@@ -35,7 +35,7 @@ test.describe('Navigation', () => {
   test('should display footer on all pages', async ({ page }) => {
     await page.goto('/');
 
-    await expect(page.getByText(/ryp cloud/i)).toBeVisible();
+    await expect(page.getByText(/postcuantica/i)).toBeVisible();
     await expect(page.getByText(/todos los derechos reservados/i)).toBeVisible();
   });
 });

@@ -9,7 +9,7 @@ CLIENTE: Empresa Demo S.A.
          Direccion: Av. Tecnologia 123, Ciudad
          RUC: 80012345-6
 
-PROVEEDOR: RYP Cloud S.A.
+PROVEEDOR: Postcuantica SpA
            Direccion: Av. Innovacion 456, Ciudad
            RUC: 80098765-4
 
